@@ -440,6 +440,8 @@
     <string name="compose_player_episodes">Episodes</string>
     <string name="player_chapters">Chapters</string>
     <string name="player_chapter_number">Chapter %1$d</string>
+    <string name="compose_player_font">Font</string>
+    <string name="compose_player_font_default">Default</string>
     <string name="compose_player_font_size">Font Size</string>
     <string name="compose_player_font_size_value">%1$dsp</string>
     <string name="compose_player_lock_controls">Lock player controls</string>
@@ -455,6 +457,8 @@
     <string name="compose_player_none">None</string>
     <string name="compose_player_outline">Outline</string>
     <string name="compose_player_outline_color">Outline Color</string>
+    <string name="compose_player_shadow">Shadow</string>
+    <string name="compose_player_shadow_strength">Shadow Strength</string>
     <string name="compose_player_panel_episodes">Episodes</string>
     <string name="compose_player_panel_sources">Sources</string>
     <string name="compose_player_panel_streams">Streams</string>
@@ -1074,6 +1078,8 @@
     <string name="settings_stream_badges_section">FUSION STYLE</string>
     <string name="settings_stream_size_badges_title">Size badges</string>
     <string name="settings_stream_size_badges_description">Show file size badges in stream results and player source panels.</string>
+    <string name="settings_stream_badges_in_player_title">Show in player</string>
+    <string name="settings_stream_badges_in_player_description">Show badges for the video and audio that is playing under the player title.</string>
     <string name="settings_stream_addon_logo_title">Addon logo</string>
     <string name="settings_stream_addon_logo_description">Show addon logo and name next to stream sources.</string>
     <string name="settings_stream_search_title">Search bar</string>
@@ -1394,9 +1400,20 @@
     <string name="settings_playback_subtitle_bold">Bold</string>
     <string name="settings_playback_subtitle_bold_description">Use a heavier subtitle font weight.</string>
     <string name="settings_playback_subtitle_color_transparent">Transparent</string>
+    <string name="settings_playback_subtitle_font">Font</string>
+    <string name="settings_playback_subtitle_font_default">Default</string>
+    <string name="settings_playback_subtitle_font_import">Import Font</string>
+    <string name="settings_playback_subtitle_font_note">Import a .ttf or .otf file. Fonts stay on this device. Subtitles in non-Latin scripts keep a font that supports them.</string>
+    <string name="settings_playback_subtitle_font_delete">Delete %1$s</string>
+    <string name="settings_playback_subtitle_font_invalid">This file isn\'t a supported font. Use a .ttf or .otf file.</string>
+    <string name="settings_playback_subtitle_font_too_large">This font is too large. The limit is 30 MB.</string>
+    <string name="settings_playback_subtitle_font_failed">Couldn\'t import the font.</string>
     <string name="settings_playback_subtitle_outline">Outline</string>
     <string name="settings_playback_subtitle_outline_color">Outline Color</string>
     <string name="settings_playback_subtitle_outline_description">Draw a border around subtitle text.</string>
+    <string name="settings_playback_subtitle_shadow">Shadow</string>
+    <string name="settings_playback_subtitle_shadow_description">Draw a soft shadow behind subtitle text to keep it readable on bright scenes.</string>
+    <string name="settings_playback_subtitle_shadow_strength">Shadow Strength</string>
     <string name="settings_playback_subtitle_show_preferred_only">Show Only Preferred Languages</string>
     <string name="settings_playback_subtitle_show_preferred_only_description">Only show subtitles matching your preferred subtitle languages.</string>
     <string name="settings_playback_subtitle_size">Subtitle Size</string>
@@ -2812,6 +2829,8 @@
     <string name="cd_switch_player_engine">Switch player engine</string>
     <string name="cd_stream_info">Stream info</string>
     <string name="player_engine_switching_manual_message">Switching to %1$s...</string>
+    <string name="player_engine_switch_title">Switch to %1$s?</string>
+    <string name="player_engine_switch_message">The video will reload from where you are.</string>
     <string name="stream_info_section_source">SOURCE</string>
     <string name="stream_info_section_video">VIDEO</string>
     <string name="stream_info_section_audio">AUDIO</string>
@@ -2877,4 +2896,8 @@
     <string name="settings_nav_bar_default_icon_color_change">Change default icon color</string>
     <string name="settings_nav_bar_default_icon_color_expand">Tap to expand the color picker.</string>
     <string name="settings_nav_bar_default_icon_color_collapse">Tap to collapse the color picker.</string>
+    <string name="settings_tracking_ratings_section">Ratings</string>
+    <string name="settings_tracking_in_app_rating">In-app rating</string>
+    <string name="settings_tracking_in_app_rating_description">Show your rating on the details page and a rating button in the player. Ratings are saved to your connected trackers.</string>
+    <string name="settings_tracking_in_app_rating_requires_tracker">Connect a tracker above to turn this on.</string>
 </resources>

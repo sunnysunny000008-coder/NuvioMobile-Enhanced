@@ -3,7 +3,6 @@ package com.nuvio.app.features.player
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -17,14 +16,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -96,12 +91,13 @@ import com.nuvio.app.core.ui.gradientMask
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.features.player.seekpreview.SeekPreviewController
 import com.nuvio.app.features.player.seekpreview.SeekPreviewOverlay
+import com.nuvio.app.features.streams.StreamBadge
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import com.nuvio.app.core.i18n.localizedEpisodeTitle
-import com.nuvio.app.core.ui.glass.ambientLiquidGlass
+import com.nuvio.app.core.ui.glass.isAmbientLiquidGlassActive
 
 @Composable
 internal fun PlayerControlsShell(
@@ -120,6 +116,7 @@ internal fun PlayerControlsShell(
     showRemainingTime: Boolean = false,
     onRuntimeClick: () -> Unit = {},
     releaseInfo: String? = null,
+    badges: List<StreamBadge> = emptyList(),
     hideDetails: Boolean = false,
     onNextEpisodeClick: (() -> Unit)? = null,
     onInteraction: () -> Unit = {},
@@ -169,11 +166,13 @@ internal fun PlayerControlsShell(
 ) {
     val density = LocalDensity.current
     var timelineHeight by remember { mutableStateOf(0.dp) }
+    val glassActive = isAmbientLiquidGlassActive()
+    var sourceLineHeight by remember { mutableStateOf(0.dp) }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val centerControlHeight = metrics.playIconSize + maxOf(metrics.playButtonPadding, metrics.sideButtonPadding) * 2
         val centerBottomPadding = if (useLegacyLayout) metrics.centerLift else maxOf(
             metrics.centerLift,
-            timelineHeight * 2 + centerControlHeight + 16.dp - maxHeight,
+            (timelineHeight - sourceLineHeight) * 2 + centerControlHeight + 16.dp - maxHeight,
         )
         Box(
             modifier = Modifier
@@ -183,7 +182,7 @@ internal fun PlayerControlsShell(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.7f),
+                            Color.Black.copy(alpha = if (glassActive) 0.35f else 0.7f),
                             Color.Transparent,
                         ),
                     ),
@@ -199,7 +198,14 @@ internal fun PlayerControlsShell(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.Black.copy(alpha = if (useLegacyLayout) 0.7f else 0.8f),
+                            Color.Black.copy(
+                                alpha = when {
+                                    useLegacyLayout && glassActive -> 0.35f
+                                    useLegacyLayout -> 0.7f
+                                    glassActive -> 0.55f
+                                    else -> 0.8f
+                                },
+                            ),
                         ),
                     ),
                 ),
@@ -238,16 +244,13 @@ internal fun PlayerControlsShell(
                     onOpenInExternalPlayer = onOpenInExternalPlayer,
                     onPartyClick = onPartyClick,
                     partyActive = partyActive,
+                    onSwitchEngineClick = onSwitchEngineClick,
                     onBack = onBack,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
-                        .padding(
-                            start = metrics.horizontalPadding,
-                            end = metrics.horizontalPadding,
-                            top = metrics.verticalPadding / 4,
-                        ),
+                        .windowInsetsPadding(playerToolbarTopInsets(metrics))
+                        .padding(horizontal = metrics.horizontalPadding),
                 )
             } else {
                 if (showPlaybackControls) {
@@ -261,10 +264,11 @@ internal fun PlayerControlsShell(
                         partyActive = partyActive,
                         onOrientationToggleClick = onOrientationToggleClick,
                         isPortraitPlayback = isPortraitPlayback,
+                        onPictureInPictureClick = onPictureInPictureClick,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
-                            .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding / 4),
+                            .windowInsetsPadding(playerToolbarTopInsets(metrics))
+                            .padding(horizontal = metrics.horizontalPadding),
                     )
                 }
                 ParentalGuideOverlay(
@@ -328,8 +332,8 @@ internal fun PlayerControlsShell(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(horizontal = metrics.horizontalPadding)
-                        .padding(bottom = metrics.sliderBottomOffset),
+                        .windowInsetsPadding(playerTimelineBottomInsets(metrics))
+                        .padding(horizontal = metrics.horizontalPadding),
                 )
             }
             if (showPlaybackControls && !useLegacyLayout) {
@@ -352,6 +356,10 @@ internal fun PlayerControlsShell(
                             providerName = providerName,
                             isPlaying = playbackSnapshot.isPlaying,
                             metrics = metrics,
+                            badges = badges,
+                            onSourceLineHeightChanged = { height ->
+                                sourceLineHeight = with(density) { height.toDp() }
+                            },
                         )
                     }
                     PlayerChapterLabel(
@@ -389,7 +397,6 @@ internal fun PlayerControlsShell(
                         onEpisodesClick = onEpisodesClick,
                         onChaptersClick = onChaptersClick,
                         onNextEpisodeClick = onNextEpisodeClick,
-                        onSwitchEngineClick = onSwitchEngineClick,
                         onSpeedClick = { onSpeedClick?.invoke() },
                         speedPickerVisible = speedPickerVisible,
                         onSpeedSelected = onSpeedSelected,
@@ -401,7 +408,7 @@ internal fun PlayerControlsShell(
                         onSubmitIntroClick = onSubmitIntroClick,
                         qualityLabel = qualityLabel,
                         onQualityClick = onQualityClick,
-                        onPictureInPictureClick = onPictureInPictureClick,
+                        onSwitchEngineClick = onSwitchEngineClick,
                         onInfoClick = onInfoClick,
                         onRateClick = onRateClick,
                         userRating = userRating,
@@ -441,6 +448,7 @@ private fun PlayerHeader(
     onOpenInExternalPlayer: (() -> Unit)?,
     onPartyClick: (() -> Unit)?,
     partyActive: Boolean,
+    onSwitchEngineClick: (() -> Unit)? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -550,6 +558,15 @@ private fun PlayerHeader(
                             onClick = onOpenInExternalPlayer,
                         )
                     }
+                    if (onSwitchEngineClick != null) {
+                        PlayerHeaderIconButton(
+                            icon = Icons.Rounded.SwapHoriz,
+                            contentDescription = stringResource(Res.string.cd_switch_player_engine),
+                            buttonSize = metrics.headerIconSize + 16.dp,
+                            iconSize = metrics.headerIconSize,
+                            onClick = onSwitchEngineClick,
+                        )
+                    }
                     if (onPartyClick != null) {
                         PlayerHeaderIconButton(
                             icon = Icons.Rounded.Groups,
@@ -558,26 +575,6 @@ private fun PlayerHeader(
                             iconSize = metrics.headerIconSize,
                             onClick = onPartyClick,
                             tint = if (partyActive) MaterialTheme.colorScheme.primary else Color.White,
-                        )
-                    }
-                    PlayerHeaderIconButton(
-                        icon = if (isLocked) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
-                        contentDescription = if (isLocked) {
-                            stringResource(Res.string.compose_player_unlock_controls)
-                        } else {
-                            stringResource(Res.string.compose_player_lock_controls)
-                        },
-                        buttonSize = metrics.headerIconSize + 16.dp,
-                        iconSize = metrics.headerIconSize,
-                        onClick = onLockToggle,
-                    )
-                    if (onVideoSettingsClick != null) {
-                        PlayerHeaderIconButton(
-                            icon = Icons.Rounded.Build,
-                            contentDescription = stringResource(Res.string.player_action_video_settings),
-                            buttonSize = metrics.headerIconSize + 16.dp,
-                            iconSize = metrics.headerIconSize,
-                            onClick = onVideoSettingsClick,
                         )
                     }
                     if (onCastClick != null) {
@@ -627,9 +624,31 @@ private fun PlayerHeader(
                             onClick = onInfoClick,
                         )
                     }
+                    if (onVideoSettingsClick != null) {
+                        PlayerHeaderIconButton(
+                            icon = Icons.Rounded.Build,
+                            contentDescription = stringResource(Res.string.player_action_video_settings),
+                            buttonSize = metrics.headerIconSize + 16.dp,
+                            iconSize = metrics.headerIconSize,
+                            onClick = onVideoSettingsClick,
+                        )
+                    }
+                    PlayerHeaderIconButton(
+                        icon = if (isLocked) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                        contentDescription = if (isLocked) {
+                            stringResource(Res.string.compose_player_unlock_controls)
+                        } else {
+                            stringResource(Res.string.compose_player_lock_controls)
+                        },
+                        buttonSize = metrics.headerIconSize + 16.dp,
+                        iconSize = metrics.headerIconSize,
+                        onClick = onLockToggle,
+                    )
                     NuvioBackButton(
                         onClick = onBack,
-                        containerColor = Color.Black.copy(alpha = 0.35f),
+                        modifier = Modifier.playerLiquidGlass(CircleShape, refractionHeight = 6.dp, refractionAmount = 8.dp),
+                        shape = CircleShape,
+                        containerColor = Color.Transparent,
                         contentColor = Color.White,
                         buttonSize = metrics.headerIconSize + 16.dp,
                         iconSize = metrics.headerIconSize,
@@ -641,8 +660,6 @@ private fun PlayerHeader(
     }
 }
 
-
-private const val PlayerControlGlassOpacity = 0.35f
 
 @Composable
 internal fun PlayerHeaderIconButton(
@@ -656,13 +673,8 @@ internal fun PlayerHeaderIconButton(
     Box(
         modifier = Modifier
             .size(buttonSize)
-            .clip(CircleShape)
-            .ambientLiquidGlass(
+            .playerLiquidGlass(
                 shape = CircleShape,
-                tint = Color.White.copy(alpha = 0.06f),
-                fallback = Color.Black.copy(alpha = 0.35f),
-                blurRadius = 12.dp,
-                backdropOpacity = PlayerControlGlassOpacity,
                 refractionHeight = 6.dp,
                 refractionAmount = 8.dp,
             )
@@ -722,13 +734,8 @@ private fun SideControlButton(
 ) {
     Box(
         modifier = Modifier
-            .clip(CircleShape)
-            .ambientLiquidGlass(
+            .playerLiquidGlass(
                 shape = CircleShape,
-                tint = Color.White.copy(alpha = 0.06f),
-                fallback = Color.Transparent,
-                blurRadius = 14.dp,
-                backdropOpacity = PlayerControlGlassOpacity,
                 refractionHeight = 8.dp,
                 refractionAmount = 12.dp,
             )
@@ -758,13 +765,8 @@ internal fun PlayPauseControlButton(
 
     Box(
         modifier = Modifier
-            .clip(CircleShape)
-            .ambientLiquidGlass(
+            .playerLiquidGlass(
                 shape = CircleShape,
-                tint = Color.White.copy(alpha = 0.06f),
-                fallback = Color.Transparent,
-                blurRadius = 16.dp,
-                backdropOpacity = PlayerControlGlassOpacity,
                 refractionHeight = 10.dp,
                 refractionAmount = 14.dp,
             )
@@ -819,6 +821,7 @@ private fun ProgressControls(
     val aspectRatioPainter = appIconPainter(AppIconResource.PlayerAspectRatio)
     val subtitlesPainter = appIconPainter(AppIconResource.PlayerSubtitles)
     val audioPainter = appIconPainter(AppIconResource.PlayerAudioFilled)
+    val sourcesPainter = appIconPainter(AppIconResource.PlayerSource)
 
     Column(modifier = modifier) {
         PlayerChapterLabel(
@@ -838,29 +841,30 @@ private fun ProgressControls(
             onScrubFinished = onScrubFinished,
             seekPreview = seekPreview,
             onTouchChange = onTimelineTouchChange,
+            showTimeRow = false,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-        ) {
+        // Legacy bottom bar: time pills on the bar's outer edges (lined up with the seek bar's
+        // ends and the pill's top edge), actions in the middle.
+        Box(modifier = Modifier.fillMaxWidth()) {
+            TimePill(
+                text = formatPlaybackTime(displayedPositionMs),
+                fontSize = metrics.timeSize,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+            TimePill(
+                text = formatPlaybackTime(playbackSnapshot.durationMs),
+                fontSize = metrics.timeSize,
+                modifier = Modifier.align(Alignment.TopEnd),
+            )
+            // Legacy bottom bar: same compact pill as before, now liquid glass.
             Surface(
                 color = Color.Transparent,
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .ambientLiquidGlass(
-                        shape = RoundedCornerShape(24.dp),
-                        tint = Color.White.copy(alpha = 0.05f),
-                        fallback = Color.Black.copy(alpha = 0.5f),
-                        blurRadius = 16.dp,
-                        backdropOpacity = PlayerControlGlassOpacity,
-                        refractionHeight = 10.dp,
-                        refractionAmount = 14.dp,
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(24.dp),
-                    ),
+                modifier = Modifier.align(Alignment.TopCenter).playerLiquidGlass(
+                    shape = RoundedCornerShape(24.dp),
+                    refractionHeight = 10.dp,
+                    refractionAmount = 14.dp,
+                ),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
@@ -904,15 +908,8 @@ private fun ProgressControls(
                     if (onSourcesClick != null) {
                         PlayerActionPillButton(
                             label = stringResource(Res.string.compose_player_sources),
-                            icon = Icons.Rounded.SwapHoriz,
+                            painter = sourcesPainter,
                             onClick = onSourcesClick,
-                        )
-                    }
-                    if (onEpisodesClick != null) {
-                        PlayerActionPillButton(
-                            label = stringResource(Res.string.compose_player_episodes),
-                            icon = Icons.Rounded.VideoLibrary,
-                            onClick = onEpisodesClick,
                         )
                     }
                     if (onChaptersClick != null) {
@@ -920,6 +917,13 @@ private fun ProgressControls(
                             label = stringResource(Res.string.player_chapters),
                             icon = Icons.AutoMirrored.Rounded.ListAlt,
                             onClick = onChaptersClick,
+                        )
+                    }
+                    if (onEpisodesClick != null) {
+                        PlayerActionPillButton(
+                            label = stringResource(Res.string.compose_player_episodes),
+                            icon = Icons.Rounded.VideoLibrary,
+                            onClick = onEpisodesClick,
                         )
                     }
                     if (onLiveChannelsClick != null) {
@@ -998,6 +1002,8 @@ internal fun PlayerSeekBar(
     seekPreview: SeekPreviewController? = null,
     chapters: List<PlayerChapter> = emptyList(),
     onTouchChange: (Boolean) -> Unit = {},
+    /** The legacy layout draws the time pills beside its action pill instead. */
+    showTimeRow: Boolean = true,
 ) {
     val seekDurationMs = durationMs.coerceAtLeast(1L)
     val bufferedFraction = playerBufferedFraction(bufferedPositionMs, durationMs)
@@ -1045,16 +1051,18 @@ internal fun PlayerSeekBar(
                 modifier = Modifier.matchParentSize(),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .padding(top = 4.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
-            TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+        if (showTimeRow) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .padding(top = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
+                TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+            }
         }
     }
 }
@@ -1185,17 +1193,11 @@ internal fun LockedPlayerOverlay(
             Box(
                 modifier = Modifier
                     .size(78.dp)
-                    .clip(CircleShape)
-                    .ambientLiquidGlass(
+                    .playerLiquidGlass(
                         shape = CircleShape,
-                        tint = Color.White.copy(alpha = 0.06f),
-                        fallback = Color.Black.copy(alpha = 0.52f),
-                        blurRadius = 16.dp,
-                        backdropOpacity = PlayerControlGlassOpacity,
                         refractionHeight = 10.dp,
                         refractionAmount = 14.dp,
                     )
-                    .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
                     .clickable(onClick = onUnlock),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1295,21 +1297,20 @@ internal fun LockedPlayerOverlay(
 private fun TimePill(
     text: String,
     fontSize: androidx.compose.ui.unit.TextUnit,
+    glass: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
+    val glassModifier = if (glass) {
+        Modifier.playerLiquidGlass(
+            shape = RoundedCornerShape(12.dp),
+            refractionHeight = 4.dp,
+            refractionAmount = 6.dp,
+        )
+    } else {
+        Modifier
+    }
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .ambientLiquidGlass(
-                shape = RoundedCornerShape(12.dp),
-                tint = Color.White.copy(alpha = 0.05f),
-                fallback = Color.Black.copy(alpha = 0.5f),
-                blurRadius = 12.dp,
-                backdropOpacity = PlayerControlGlassOpacity,
-                refractionHeight = 4.dp,
-                refractionAmount = 6.dp,
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+        modifier = modifier.then(glassModifier).padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
             text = text,

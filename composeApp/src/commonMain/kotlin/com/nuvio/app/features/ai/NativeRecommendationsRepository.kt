@@ -43,6 +43,9 @@ enum class NativeRecommendationRow(
     FantasyAdventure("genre_fantasy_adventure", "Fantasy Adventures", "Fantasy worlds and epic adventures", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "14,12", "vote_count.gte" to "50")),
     ComedyRomance("genre_comedy_romance", "Romantic Comedies", "Lighthearted romance picks", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "35,10749", "vote_count.gte" to "50"));
 
+    /** Stable key used by the existing Home catalog chooser. */
+    val catalogKey: String get() = "native_rec_$key"
+
     companion object {
         fun fromKey(key: String): NativeRecommendationRow? = values().firstOrNull { it.key == key }
     }
@@ -163,6 +166,8 @@ object NativeRecommendationsRepository {
                     append('#')
                     profile.topGenres.forEach { append(it.lowercase()).append('|') }
                     append('#')
+                    NativeTasteBuilderRepository.selectedGenres().forEach { append("taste:").append(it.lowercase()).append('|') }
+                    append('#')
                     profile.saved.forEach { append(it.name.lowercase()).append('|') }
                 }
                 val now = Clock.System.now().toEpochMilliseconds()
@@ -219,10 +224,10 @@ object NativeRecommendationsRepository {
                     genreSignals[genre.id] = genre.name to ((old?.second ?: 0) + 2)
                 }
         }
-        profile.topGenres.forEach { name ->
+        (profile.topGenres.map { it to 1 } + NativeTasteBuilderRepository.selectedGenres().map { it to 4 }).forEach { (name, weight) ->
             val id = genreId(name) ?: return@forEach
             val old = genreSignals[id]
-            genreSignals[id] = name to ((old?.second ?: 0) + 1)
+            genreSignals[id] = name to ((old?.second ?: 0) + weight)
         }
         val tasteGenres = genreSignals.entries
             .sortedWith(compareByDescending<Map.Entry<Int, Pair<String, Int>>> { it.value.second }.thenBy { it.value.first })

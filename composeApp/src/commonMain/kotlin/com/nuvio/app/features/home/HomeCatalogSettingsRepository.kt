@@ -494,10 +494,19 @@ object HomeCatalogSettingsRepository {
     }
 
     private fun normalizePreferences() {
-        val current = preferences
+        val current = preferences.toMutableMap()
+        // Migrate the short-lived keys written by the earlier native-row fix while preserving
+        // custom titles, enabled state, ordering, and row-shape preferences.
+        NativeRecommendationRow.values().forEach { row ->
+            val oldPreference = current[row.key]
+            if (oldPreference != null && current[row.catalogKey] == null) {
+                current[row.catalogKey] = oldPreference.copy(key = row.catalogKey)
+            }
+            current.remove(row.key)
+        }
         data class UnifiedEntry(val key: String, val isCollection: Boolean)
         val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }
-        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.key, false) }
+        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.catalogKey, false) }
         val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }
         val allEntries = catalogEntries + nativeRecommendationEntries + collectionEntries
         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)
@@ -577,9 +586,9 @@ object HomeCatalogSettingsRepository {
         }
 
         val nativeItems = NativeRecommendationRow.values().map { row ->
-            val preference = preferences[row.key]
+            val preference = preferences[row.catalogKey]
             HomeCatalogSettingsItem(
-                key = row.key,
+                key = row.catalogKey,
                 defaultTitle = row.title,
                 addonName = "Native TMDB",
                 customTitle = preference?.customTitle.orEmpty(),

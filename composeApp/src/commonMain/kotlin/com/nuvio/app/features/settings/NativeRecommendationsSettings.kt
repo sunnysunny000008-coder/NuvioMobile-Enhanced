@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.ai.NativeRecommendationRow
+import com.nuvio.app.features.ai.NativeTasteBuilderRepository
 import com.nuvio.app.features.ai.NativeRecommendationsRepository
 
 @Composable
@@ -30,6 +31,8 @@ internal fun NativeRecommendationsCollapsibleRow(isTablet: Boolean) {
         NativeRecommendationsRepository.uiState
     }.collectAsStateWithLifecycle()
     var expanded by remember { mutableStateOf(false) }
+    var tasteBuilderExpanded by remember { mutableStateOf(false) }
+    var selectedTasteGenres by remember { mutableStateOf(NativeTasteBuilderRepository.selectedGenres().toSet()) }
 
     Column {
         SettingsNavigationRow(
@@ -77,6 +80,51 @@ internal fun NativeRecommendationsCollapsibleRow(isTablet: Boolean) {
                     },
                     onClick = {},
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Build My Taste Profile",
+                    description = "Choose the genres you enjoy. Native TMDB recommendations will prioritize them.",
+                    icon = Icons.Rounded.AutoAwesome,
+                    isTablet = isTablet,
+                    trailingContent = {
+                        Icon(
+                            imageVector = if (tasteBuilderExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    onClick = { tasteBuilderExpanded = !tasteBuilderExpanded },
+                )
+                AnimatedVisibility(visible = tasteBuilderExpanded) {
+                    Column {
+                        Text(
+                            text = "What do you like watching? Select as many genres as you want. Your choices are saved on this device and do not affect Gemini recommendations or other settings.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                        NativeTasteBuilderRepository.availableGenres.forEach { genre ->
+                            SettingsSwitchRow(
+                                title = genre,
+                                description = if (genre in selectedTasteGenres) "Preferred genre" else "Not selected",
+                                checked = genre in selectedTasteGenres,
+                                isTablet = isTablet,
+                                onCheckedChange = { checked ->
+                                    val updated = if (checked) selectedTasteGenres + genre else selectedTasteGenres - genre
+                                    selectedTasteGenres = updated
+                                    NativeTasteBuilderRepository.setSelectedGenres(updated)
+                                },
+                            )
+                        }
+                        TextButton(
+                            onClick = { NativeRecommendationsRepository.refresh(force = true) },
+                            enabled = state.enabled && !state.isLoading,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null)
+                            Text(text = if (state.isLoading) "Updating recommendations…" else "Apply taste profile")
+                        }
+                    }
+                }
                 NativeRecommendationRow.values().forEach { row ->
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(

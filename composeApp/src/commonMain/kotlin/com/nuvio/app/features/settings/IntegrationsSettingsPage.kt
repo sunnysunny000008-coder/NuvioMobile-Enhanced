@@ -79,6 +79,8 @@ internal fun LazyListScope.integrationsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 GeminiRecommendationsCollapsibleRow(isTablet = isTablet)
+                SettingsGroupDivider(isTablet = isTablet)
+                NativeRecommendationsCollapsibleRow(isTablet = isTablet)
                 if (DiscordRpcPlatform.isSupported) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(

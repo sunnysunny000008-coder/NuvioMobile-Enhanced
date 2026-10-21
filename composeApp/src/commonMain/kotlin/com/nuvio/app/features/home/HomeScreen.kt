@@ -54,6 +54,7 @@ import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.ai.AiRecommendationsRepository
 import com.nuvio.app.features.ai.AiSettingsRepository
+import com.nuvio.app.features.ai.NativeRecommendationsRepository
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -926,7 +927,25 @@ fun HomeScreen(
         AiSettingsRepository.ensureLoaded()
         AiRecommendationsRepository.uiState
     }.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { AiRecommendationsRepository.refresh() }
+    LaunchedEffect(Unit) {
+        AiRecommendationsRepository.refresh()
+    }
+    // Re-evaluate native taste shelves when the active profile's watched history or playback
+    // progress changes. The repository signature/cache prevents unnecessary TMDB requests.
+    LaunchedEffect(
+        watchedUiState.items.map { it.id to it.markedAtEpochMs },
+        watchProgressUiState.entries
+            .filter { entry -> entry.isCompleted || (entry.durationMs > 0L && entry.lastPositionMs.toDouble() / entry.durationMs >= 0.2) }
+            .map { it.parentMetaId to it.parentMetaType }
+            .distinct(),
+    ) {
+        NativeRecommendationsRepository.ensureLoaded()
+        NativeRecommendationsRepository.refresh()
+    }
+    val nativeRecommendationsUiState by remember {
+        NativeRecommendationsRepository.ensureLoaded()
+        NativeRecommendationsRepository.uiState
+    }.collectAsStateWithLifecycle()
 
     val visibleCollections = remember(collections) {
         collections.filter { it.folders.isNotEmpty() }
@@ -1338,6 +1357,25 @@ fun HomeScreen(
                                             onPosterClick = onPosterClick,
                                             onPosterLongClick = onPosterLongClick,
                                         )
+                                    }
+                                }
+                            }
+                            if (nativeRecommendationsUiState.enabled) {
+                                nativeRecommendationsUiState.sections.forEach { section ->
+                                    if (section.items.isNotEmpty()) {
+                                        item(key = "native_recommendation_${section.key}") {
+                                            HomeCatalogRowSection(
+                                                section = section,
+                                                entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                                modifier = Modifier.padding(bottom = 12.dp),
+                                                sectionPadding = homeSectionPadding,
+                                                onViewAllClick = null,
+                                                watchedKeys = watchedUiState.watchedKeys,
+                                                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                                                onPosterClick = onPosterClick,
+                                                onPosterLongClick = onPosterLongClick,
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -60,6 +60,7 @@ object AiSettingsRepository {
     fun onProfileChanged() {
         loadFromDisk()
         AiRecommendationsRepository.onProfileChanged()
+        NativeRecommendationsRepository.onProfileChanged()
     }
 
     fun snapshot(): AiRecommendationSettings {

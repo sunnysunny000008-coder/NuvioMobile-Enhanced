@@ -43,6 +43,8 @@ object TmdbMetadataService {
     private val entityBrowseCache = mutableMapOf<String, TmdbEntityBrowseData>()
     private val entityHeaderCache = mutableMapOf<String, TmdbEntityHeader>()
     private val entityRailCache = mutableMapOf<String, List<MetaPreview>>()
+    private val nativeKeywordCache = mutableMapOf<String, List<TmdbKeyword>>()
+    private val nativeGenreCache = mutableMapOf<String, List<TmdbKeyword>>()
     private val backdropCache = linkedMapOf<String, String?>()
     private val backdropCacheMutex = Mutex()
     private val backdropRequests = Semaphore(4)
@@ -462,6 +464,86 @@ object TmdbMetadataService {
         data
     }
 
+    /** Related titles for native personalization; deliberately independent of the optional More Like This UI toggle. */
+    suspend fun fetchNativeRelated(itemId: String, itemType: String, language: String, forceRefresh: Boolean = false): List<MetaPreview> {
+        val mediaType = normalizeMetaType(itemType)
+        if (mediaType != "movie" && mediaType != "tv") return emptyList()
+        val tmdbId = TmdbService.ensureTmdbId(itemId, mediaType)?.toIntOrNull() ?: return emptyList()
+        return fetchMoreLikeThis(
+            tmdbId = tmdbId,
+            mediaType = mediaType,
+            language = normalizeTmdbLanguage(language),
+            page = 1,
+            forceRefresh = forceRefresh,
+        ).items
+    }
+
+    /** Genre ids and names for a title in the active Nuvio watch history. */
+    suspend fun fetchNativeGenres(itemId: String, itemType: String, language: String, forceRefresh: Boolean = false): List<TmdbKeyword> {
+        val mediaType = normalizeMetaType(itemType)
+        if (mediaType != "movie" && mediaType != "tv") return emptyList()
+        val tmdbId = TmdbService.ensureTmdbId(itemId, mediaType)?.toIntOrNull() ?: return emptyList()
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val cacheKey = "$tmdbId:$mediaType:$normalizedLanguage:genres"
+        if (!forceRefresh) nativeGenreCache[cacheKey]?.let { return it }
+        val response = fetch<TmdbDetailsResponse>(
+            endpoint = "$mediaType/$tmdbId",
+            query = mapOf("language" to normalizedLanguage),
+        ) ?: return emptyList()
+        val genres = response.genres.mapNotNull { genre ->
+            val id = genre.id ?: return@mapNotNull null
+            val name = genre.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TmdbKeyword(id, name)
+        }
+        nativeGenreCache[cacheKey] = genres
+        return genres
+    }
+
+    /** TMDB keyword ids attached to a title, used to build taste-based Discover shelves. */
+    suspend fun fetchNativeKeywords(itemId: String, itemType: String, language: String, forceRefresh: Boolean = false): List<TmdbKeyword> {
+        val mediaType = normalizeMetaType(itemType)
+        if (mediaType != "movie" && mediaType != "tv") return emptyList()
+        val tmdbId = TmdbService.ensureTmdbId(itemId, mediaType)?.toIntOrNull() ?: return emptyList()
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val cacheKey = "$tmdbId:$mediaType:$normalizedLanguage:keywords"
+        if (!forceRefresh) nativeKeywordCache[cacheKey]?.let { return it }
+        val response = fetch<TmdbKeywordsResponse>(
+            endpoint = "$mediaType/$tmdbId/keywords",
+            query = mapOf("language" to normalizedLanguage),
+        ) ?: return emptyList()
+        val keywords = (response.keywords + response.results).distinctBy { it.id }.filter { it.id > 0 && it.name.isNotBlank() }
+        nativeKeywordCache[cacheKey] = keywords
+        return keywords
+    }
+
+    /** Native recommendation rows backed directly by TMDB Discover filters. */
+    suspend fun fetchNativeDiscoverRow(
+        mediaType: TmdbEntityMediaType,
+        filters: Map<String, String>,
+        language: String,
+        limit: Int = 20,
+        forceRefresh: Boolean = false,
+    ): List<MetaPreview> {
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val cacheKey = "native:${mediaType.value}:$normalizedLanguage:${filters.toSortedMap()}:$limit"
+        if (!forceRefresh) entityRailCache[cacheKey]?.let { return it }
+        val endpoint = if (mediaType == TmdbEntityMediaType.MOVIE) "discover/movie" else "discover/tv"
+        val query = buildMap {
+            put("language", normalizedLanguage)
+            put("page", "1")
+            put("sort_by", "popularity.desc")
+            put("include_adult", "false")
+            filters.forEach { (key, value) -> put(key, value) }
+        }
+        val response = fetch<TmdbDiscoverResponse>(endpoint = endpoint, query = query) ?: return emptyList()
+        val results = response.results
+        val mapped = results.mapNotNull { result ->
+            mapEntityDiscoverResult(result, mediaType, normalizedLanguage, emptyMap())
+        }.distinctBy { it.id }.take(limit)
+        entityRailCache[cacheKey] = mapped
+        return mapped
+    }
+
     suspend fun fetchEntityRailPage(
         entityKind: TmdbEntityKind,
         entityId: Int,
@@ -657,7 +739,20 @@ object TmdbMetadataService {
             logo = null,
             description = result.overview?.takeIf { it.isNotBlank() },
             releaseInfo = releaseInfo,
+            imdbRating = result.voteAverage?.formatRating(),
+            voteCount = result.voteCount,
+            genres = result.genreIds.mapNotNull(::tmdbGenreName),
         )
+    }
+
+    private fun tmdbGenreName(id: Int): String? = when (id) {
+        28 -> "Action"; 12 -> "Adventure"; 16 -> "Animation"; 35 -> "Comedy"; 80 -> "Crime"
+        99 -> "Documentary"; 18 -> "Drama"; 10751 -> "Family"; 14 -> "Fantasy"; 36 -> "History"
+        27 -> "Horror"; 10402 -> "Music"; 9648 -> "Mystery"; 10749 -> "Romance"; 878 -> "Science Fiction"
+        10770 -> "TV Movie"; 53 -> "Thriller"; 10752 -> "War"; 37 -> "Western"
+        10759 -> "Action & Adventure"; 10762 -> "Kids"; 10763 -> "News"; 10764 -> "Reality"
+        10765 -> "Sci-Fi & Fantasy"; 10766 -> "Soap"; 10767 -> "Talk"; 10768 -> "War & Politics"
+        else -> null
     }
 
     private fun buildEntityMediaOrder(
@@ -1234,9 +1329,10 @@ object TmdbMetadataService {
         mediaType: String,
         language: String,
         page: Int = 1,
+        forceRefresh: Boolean = false,
     ): MoreLikeThisPage {
         val cacheKey = "$tmdbId:$mediaType:$language:recommendations:$page"
-        moreLikeThisCache[cacheKey]?.let { return it }
+        if (!forceRefresh) moreLikeThisCache[cacheKey]?.let { return it }
 
         val response = fetch<TmdbRecommendationResponse>(
             endpoint = "$mediaType/$tmdbId/recommendations",
@@ -1937,6 +2033,7 @@ private fun TmdbVideoResult.toMetaTrailer(
 
 @Serializable
 private data class TmdbNamedItem(
+    val id: Int? = null,
     val name: String? = null,
 )
 
@@ -2266,6 +2363,15 @@ private data class TmdbNetworkDetailsResponse(
 )
 
 @Serializable
+data class TmdbKeyword(val id: Int, val name: String)
+
+@Serializable
+private data class TmdbKeywordsResponse(
+    val keywords: List<TmdbKeyword> = emptyList(),
+    val results: List<TmdbKeyword> = emptyList(),
+)
+
+@Serializable
 private data class TmdbDiscoverResponse(
     val page: Int? = null,
     val results: List<TmdbDiscoverResult> = emptyList(),
@@ -2287,4 +2393,5 @@ internal data class TmdbDiscoverResult(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("vote_count") val voteCount: Int? = null,
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
 )

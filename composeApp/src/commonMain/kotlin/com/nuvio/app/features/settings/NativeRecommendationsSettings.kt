@@ -56,6 +56,27 @@ internal fun NativeRecommendationsCollapsibleRow(isTablet: Boolean) {
                     isTablet = isTablet,
                     onCheckedChange = NativeRecommendationsRepository::setEnabled,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Movie / Series Balance",
+                    description = "Choose the target mix for shelves that include both movies and TV series.",
+                    icon = Icons.Rounded.AutoAwesome,
+                    isTablet = isTablet,
+                    trailingContent = {
+                        androidx.compose.foundation.layout.Row {
+                            listOf(50, 60, 70).forEach { percent ->
+                                TextButton(onClick = { NativeRecommendationsRepository.setMovieRatioPercent(percent) }) {
+                                    Text(
+                                        text = "$percent/${100 - percent}",
+                                        color = if (state.movieRatioPercent == percent) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    onClick = {},
+                )
                 NativeRecommendationRow.values().forEach { row ->
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(

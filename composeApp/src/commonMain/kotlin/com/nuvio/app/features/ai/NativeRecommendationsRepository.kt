@@ -36,12 +36,12 @@ enum class NativeRecommendationRow(
     Decade2000("decade_2000", "From the 2000s", "Popular movies released in the 2000s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "2000-01-01", "primary_release_date.lte" to "2009-12-31")),
     Decade2010("decade_2010", "From the 2010s", "Popular movies released in the 2010s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "2010-01-01", "primary_release_date.lte" to "2019-12-31")),
     Decade2020("decade_2020", "From the 2020s", "Popular movies released in the 2020s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "2020-01-01", "primary_release_date.lte" to "2029-12-31")),
-    QuickWatches("quick_watches", "Quick watches", "Movies under 100 minutes", TmdbEntityMediaType.MOVIE, mapOf("with_runtime.lte" to "100", "with_runtime.gte" to "1", "vote_count.gte" to "50")),
-    FinishedSeries("finished_series", "Finished series to binge", "Completed TV series, sorted by popularity", TmdbEntityMediaType.TV, mapOf("with_status" to "3", "vote_count.gte" to "30")),
-    ScifiMystery("genre_scifi_mystery", "Sci-fi mysteries", "Science fiction meets mystery", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "878,9648", "vote_count.gte" to "50")),
-    CrimeThriller("genre_crime_thriller", "Crime & thrillers", "Tense crime stories and thrillers", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "80,53", "vote_count.gte" to "50")),
-    FantasyAdventure("genre_fantasy_adventure", "Fantasy adventures", "Fantasy worlds and epic adventures", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "14,12", "vote_count.gte" to "50")),
-    ComedyRomance("genre_comedy_romance", "Romantic comedies", "Lighthearted romance picks", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "35,10749", "vote_count.gte" to "50"));
+    QuickWatches("quick_watches", "Quick Watches", "Movies under 100 minutes", TmdbEntityMediaType.MOVIE, mapOf("with_runtime.lte" to "100", "with_runtime.gte" to "1", "vote_count.gte" to "50")),
+    FinishedSeries("finished_series", "Finished Series to Binge", "Completed TV series, sorted by popularity", TmdbEntityMediaType.TV, mapOf("with_status" to "3", "vote_count.gte" to "30")),
+    ScifiMystery("genre_scifi_mystery", "Sci-Fi Mysteries", "Science fiction meets mystery", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "878,9648", "vote_count.gte" to "50")),
+    CrimeThriller("genre_crime_thriller", "Crime & Thrillers", "Tense crime stories and thrillers", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "80,53", "vote_count.gte" to "50")),
+    FantasyAdventure("genre_fantasy_adventure", "Fantasy Adventures", "Fantasy worlds and epic adventures", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "14,12", "vote_count.gte" to "50")),
+    ComedyRomance("genre_comedy_romance", "Romantic Comedies", "Lighthearted romance picks", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "35,10749", "vote_count.gte" to "50"));
 
     companion object {
         fun fromKey(key: String): NativeRecommendationRow? = values().firstOrNull { it.key == key }
@@ -51,6 +51,8 @@ enum class NativeRecommendationRow(
 data class NativeRecommendationsUiState(
     val enabled: Boolean = false,
     val enabledRows: Set<NativeRecommendationRow> = NativeRecommendationRow.values().toSet(),
+    /** Target movie share for mixed movie/TV shelves; the remaining share is TV series. */
+    val movieRatioPercent: Int = 50,
     val sections: List<HomeCatalogSection> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -61,6 +63,7 @@ object NativeRecommendationsRepository {
     private const val KEY_ENABLED = "native_recommendations_enabled"
     private const val KEY_ROWS = "native_recommendations_rows"
     private const val KEY_ROW_VERSION = "native_recommendations_rows_version"
+    private const val KEY_MOVIE_RATIO = "native_recommendations_movie_ratio"
     private const val REFRESH_TTL_MS = 6L * 60L * 60L * 1000L
     private const val MAX_WATCHED_SEEDS = 4
     private const val MAX_KEYWORD_ROWS = 2
@@ -105,6 +108,8 @@ object NativeRecommendationsRepository {
         _uiState.value = NativeRecommendationsUiState(
             enabled = AiSettingsStorage.load(KEY_ENABLED)?.toBooleanStrictOrNull() ?: false,
             enabledRows = enabledRows,
+            movieRatioPercent = AiSettingsStorage.load(KEY_MOVIE_RATIO)?.toIntOrNull()
+                ?.takeIf { it in setOf(50, 60, 70) } ?: 50,
         )
     }
 
@@ -113,6 +118,15 @@ object NativeRecommendationsRepository {
         AiSettingsStorage.save(KEY_ENABLED, enabled.toString())
         _uiState.value = _uiState.value.copy(enabled = enabled)
         if (enabled) refresh(force = true)
+    }
+
+    fun setMovieRatioPercent(percent: Int) {
+        ensureLoaded()
+        val normalized = percent.takeIf { it in setOf(50, 60, 70) } ?: 50
+        if (_uiState.value.movieRatioPercent == normalized) return
+        AiSettingsStorage.save(KEY_MOVIE_RATIO, normalized.toString())
+        _uiState.value = _uiState.value.copy(movieRatioPercent = normalized)
+        if (_uiState.value.enabled) refresh(force = true)
     }
 
     fun setRowEnabled(row: NativeRecommendationRow, enabled: Boolean) {
@@ -160,7 +174,13 @@ object NativeRecommendationsRepository {
                     return@launch
                 }
 
-                val sections = buildSections(current.enabledRows, profile, settings.language, forceRefresh = force)
+                val sections = buildSections(
+                    current.enabledRows,
+                    profile,
+                    settings.language,
+                    forceRefresh = force,
+                    movieRatioPercent = current.movieRatioPercent,
+                )
                 lastTasteSignature = signature
                 _uiState.value = _uiState.value.copy(
                     sections = sections,
@@ -184,6 +204,7 @@ object NativeRecommendationsRepository {
         profile: TasteProfile,
         language: String,
         forceRefresh: Boolean,
+        movieRatioPercent: Int,
     ): List<HomeCatalogSection> {
         val excluded = profile.excludedNames
         val seen = linkedSetOf<String>()
@@ -217,8 +238,8 @@ object NativeRecommendationsRepository {
             val filtered = items.asSequence()
                 .filter { it.name.isNotBlank() }
                 .filterNot { normalizeAiTitle(it.name) in excluded }
-                .filter { seen.add(it.id) }
-                .distinctBy { it.id }
+                .filter { seen.add("${it.type}:${it.id}") }
+                .distinctBy { "${it.type}:${it.id}" }
                 .take(ROW_LIMIT)
                 .toList()
             if (filtered.isEmpty()) return
@@ -233,7 +254,7 @@ object NativeRecommendationsRepository {
             )
         }
 
-        for (row in NativeRecommendationRow.values()) {
+        for (row in NativeRecommendationRow.values().toList().shuffled()) {
             if (row !in enabledRows) continue
             when (row) {
                 NativeRecommendationRow.ForYou -> {
@@ -244,10 +265,10 @@ object NativeRecommendationsRepository {
                         candidates += TmdbMetadataService.fetchNativeRelated(seed.id.orEmpty(), seed.type, language, forceRefresh)
                     }
                     if (genreId != null) {
-                        candidates += fetchBothMedia(mapOf("with_genres" to genreId.toString(), "vote_count.gte" to "30"), language, forceRefresh)
+                        candidates += fetchBothMedia(mapOf("with_genres" to genreId.toString(), "vote_count.gte" to "30"), language, forceRefresh, movieRatioPercent)
                     } else if (candidates.isEmpty()) {
                         // A new profile with no history still gets a useful starting shelf.
-                        candidates += fetchBothMedia(mapOf("vote_count.gte" to "100", "vote_average.gte" to "6.5"), language, forceRefresh)
+                        candidates += fetchBothMedia(mapOf("vote_count.gte" to "100", "vote_average.gte" to "6.5"), language, forceRefresh, movieRatioPercent)
                     }
                     addSection(row, items = candidates)
                 }
@@ -257,9 +278,9 @@ object NativeRecommendationsRepository {
                         addSection(
                             row = row,
                             suffix = normalizeAiTitle(seed.name).take(28).ifBlank { "recent" },
-                            title = "Because you watched ${seed.name}",
+                            title = "Because You Watched ${seed.name}",
                             subtitle = "More like ${seed.name}",
-                            items = related,
+                            items = related.shuffled(),
                         )
                     }
                 }
@@ -268,6 +289,7 @@ object NativeRecommendationsRepository {
                         .distinctBy { it.second }.take(4)
                     val combinations = if (genres.size >= 2) {
                         genres.indices.flatMap { first -> ((first + 1) until genres.size).map { second -> genres[first] to genres[second] } }
+                            .shuffled()
                             .take(MAX_GENRE_COMBINATIONS)
                     } else emptyList()
                     combinations.forEach { (first, second) ->
@@ -277,7 +299,7 @@ object NativeRecommendationsRepository {
                             suffix = "${first.second}_${second.second}",
                             title = "${first.first} + ${second.first}",
                             subtitle = "A combination based on your saved titles",
-                            items = fetchBothMedia(filters, language, forceRefresh),
+                            items = fetchBothMedia(filters, language, forceRefresh, movieRatioPercent),
                         )
                     }
                 }
@@ -298,14 +320,15 @@ object NativeRecommendationsRepository {
                         addSection(
                             row = row,
                             suffix = id.toString(),
-                            title = "Because you like ${pair.first}",
+                            title = "Because You Like ${pair.first}",
                             subtitle = "A theme found in your viewing history",
-                            items = fetchBothMedia(mapOf("with_keywords" to id.toString(), "vote_count.gte" to "20"), language, forceRefresh),
+                            items = fetchBothMedia(mapOf("with_keywords" to id.toString(), "vote_count.gte" to "20"), language, forceRefresh, movieRatioPercent),
                         )
                     }
                 }
                 else -> {
                     val items = TmdbMetadataService.fetchNativeDiscoverRow(row.mediaType, row.filters, language, forceRefresh = forceRefresh)
+                        .shuffled()
                     addSection(row, items = items)
                 }
             }
@@ -313,10 +336,39 @@ object NativeRecommendationsRepository {
         return sections
     }
 
-    private suspend fun fetchBothMedia(filters: Map<String, String>, language: String, forceRefresh: Boolean): List<MetaPreview> {
+    private suspend fun fetchBothMedia(
+        filters: Map<String, String>,
+        language: String,
+        forceRefresh: Boolean,
+        movieRatioPercent: Int = _uiState.value.movieRatioPercent,
+    ): List<MetaPreview> {
         val movies = TmdbMetadataService.fetchNativeDiscoverRow(TmdbEntityMediaType.MOVIE, filters, language, limit = ROW_LIMIT, forceRefresh = forceRefresh)
         val shows = TmdbMetadataService.fetchNativeDiscoverRow(TmdbEntityMediaType.TV, filters, language, limit = ROW_LIMIT, forceRefresh = forceRefresh)
-        return (movies + shows).distinctBy { it.id }
+        // Shuffle both pools and interleave them according to the user's preferred ratio.
+        // If one pool runs short, the other fills the remaining positions.
+        val moviePool = movies.shuffled().toMutableList()
+        val showPool = shows.shuffled().toMutableList()
+        val mixed = mutableListOf<MetaPreview>()
+        val movieShare = movieRatioPercent.coerceIn(0, 100) / 100.0
+        var moviesTaken = 0
+        var showsTaken = 0
+        while (moviePool.isNotEmpty() || showPool.isNotEmpty()) {
+            val total = moviesTaken + showsTaken
+            val shouldTakeMovie = moviePool.isNotEmpty() && (
+                showPool.isEmpty() || moviesTaken.toDouble() < movieShare * (total + 1)
+                )
+            if (shouldTakeMovie) {
+                mixed += moviePool.removeAt(0)
+                moviesTaken++
+            } else if (showPool.isNotEmpty()) {
+                mixed += showPool.removeAt(0)
+                showsTaken++
+            } else if (moviePool.isNotEmpty()) {
+                mixed += moviePool.removeAt(0)
+                moviesTaken++
+            }
+        }
+        return mixed.distinctBy { "${it.type}:${it.id}" }
     }
 
     private fun genreId(name: String): Int? = when (name.trim().lowercase().replace('-', ' ').replace('_', ' ')) {

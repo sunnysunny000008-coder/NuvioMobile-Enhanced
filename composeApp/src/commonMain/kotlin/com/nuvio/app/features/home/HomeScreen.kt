@@ -940,7 +940,7 @@ fun HomeScreen(
             .distinct(),
     ) {
         NativeRecommendationsRepository.ensureLoaded()
-        NativeRecommendationsRepository.refresh()
+        NativeRecommendationsRepository.refresh(force = true)
     }
     val nativeRecommendationsUiState by remember {
         NativeRecommendationsRepository.ensureLoaded()
@@ -1360,13 +1360,42 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                        }
+                        // Native TMDB families are selectable in the existing chooser for any catalog category.
+                        val selectedNativeCatalogKeys = enabledHomeItems
+                            .asSequence()
+                            .filter { it.enabled }
+                            .map { it.key }
+                            .filter { it.startsWith("native_rec_") }
+                            .toSet()
                             if (nativeRecommendationsUiState.enabled) {
-                                nativeRecommendationsUiState.sections.forEach { section ->
-                                    if (section.items.isNotEmpty()) {
+                                nativeRecommendationsUiState.sections
+                                    .filter { section ->
+                                        selectedNativeCatalogKeys.any { catalogKey ->
+                                            val rowKey = catalogKey.removePrefix("native_rec_")
+                                            section.key == "native_$rowKey" || section.key.startsWith("native_${rowKey}_")
+                                        }
+                                    }
+                                    .forEach { section ->
+                                    val categoryItems = when (activeCategory?.id) {
+                                        HOME_CATEGORY_MOVIES_ID -> section.items.filter { it.type.equals("movie", ignoreCase = true) }
+                                        HOME_CATEGORY_TV_ID -> section.items.filter { it.type.equals("tv", ignoreCase = true) }
+                                        else -> section.items
+                                    }
+                                    if (categoryItems.isNotEmpty()) {
                                         item(key = "native_recommendation_${section.key}") {
+                                            val familySetting = enabledHomeItems.firstOrNull { item ->
+                                                if (!item.key.startsWith("native_rec_")) return@firstOrNull false
+                                                val rowKey = item.key.removePrefix("native_rec_")
+                                                section.key == "native_$rowKey" || section.key.startsWith("native_${rowKey}_")
+                                            }
                                             HomeCatalogRowSection(
-                                                section = section,
-                                                entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                                section = section.copy(
+                                                    items = categoryItems,
+                                                    availableItemCount = categoryItems.size,
+                                                    landscapeModeOverride = familySetting?.rowShape?.landscapeOverride,
+                                                ),
+                                                entries = categoryItems.take(HOME_CATALOG_PREVIEW_LIMIT),
                                                 modifier = Modifier.padding(bottom = 12.dp),
                                                 sectionPadding = homeSectionPadding,
                                                 onViewAllClick = null,
@@ -1379,7 +1408,6 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }

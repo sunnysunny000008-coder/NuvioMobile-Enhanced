@@ -1,6 +1,7 @@
 package com.nuvio.app.features.home
 
 import androidx.compose.ui.text.intl.Locale
+import com.nuvio.app.features.ai.NativeRecommendationRow
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionRepository
@@ -496,8 +497,9 @@ object HomeCatalogSettingsRepository {
         val current = preferences
         data class UnifiedEntry(val key: String, val isCollection: Boolean)
         val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }
+        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.catalogKey, false) }
         val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }
-        val allEntries = catalogEntries + collectionEntries
+        val allEntries = catalogEntries + nativeRecommendationEntries + collectionEntries
         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)
         var nextOrder = (current.values.maxOfOrNull(StoredHomeCatalogPreference::order) ?: -1) + 1
 
@@ -574,8 +576,22 @@ object HomeCatalogSettingsRepository {
             )
         }
 
-        val items = (catalogItems + collectionItems)
-            .sortedBy { it.order }
+        val nativeItems = NativeRecommendationRow.values().map { row ->
+            val preference = preferences[row.catalogKey]
+            HomeCatalogSettingsItem(
+                key = row.catalogKey,
+                defaultTitle = row.title,
+                addonName = "Native TMDB",
+                customTitle = preference?.customTitle.orEmpty(),
+                enabled = preference?.enabled ?: true,
+                heroSourceEnabled = false,
+                order = preference?.order ?: 0,
+                rowShape = HomeRowShapeMode.fromStorageValue(preference?.rowShape),
+            )
+        }
+
+        val items = (catalogItems + nativeItems + collectionItems)
+            .sortedWith(compareBy<HomeCatalogSettingsItem> { it.order }.thenBy { it.key })
 
         _uiState.value = HomeCatalogSettingsUiState(
             heroEnabled = heroEnabled,

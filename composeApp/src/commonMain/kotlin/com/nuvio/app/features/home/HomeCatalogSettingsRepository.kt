@@ -497,7 +497,7 @@ object HomeCatalogSettingsRepository {
         val current = preferences
         data class UnifiedEntry(val key: String, val isCollection: Boolean)
         val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }
-        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.catalogKey, false) }
+        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.key, false) }
         val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }
         val allEntries = catalogEntries + nativeRecommendationEntries + collectionEntries
         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)
@@ -577,9 +577,9 @@ object HomeCatalogSettingsRepository {
         }
 
         val nativeItems = NativeRecommendationRow.values().map { row ->
-            val preference = preferences[row.catalogKey]
+            val preference = preferences[row.key]
             HomeCatalogSettingsItem(
-                key = row.catalogKey,
+                key = row.key,
                 defaultTitle = row.title,
                 addonName = "Native TMDB",
                 customTitle = preference?.customTitle.orEmpty(),

@@ -105,6 +105,7 @@ internal enum class HomeHeroStyle(
     NETFLIX("netflix"),
     COVERFLOW("coverflow"),
     STACKED_DECK("stacked_deck"),
+    CONTINUE_WATCHING("continue_watching"),
     ;
 
     companion object {

@@ -61,6 +61,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -184,6 +185,11 @@ private const val COVERFLOW_SIDE_OFFSET_CARD_FRACTION = 0.5f / COVERFLOW_POSTER_
 private const val COVERFLOW_SIDE_SCALE_DROP = 0.15f
 private const val COVERFLOW_SIDE_TILT_DEGREES = 28f
 // Stacked deck: how many cards show behind the front one, how much each shrinks, and how far its edge peeks out.
+// Ambient backdrop: blurred artwork behind the cards. Lower tint alpha = more of the artwork shows through.
+private val COVERFLOW_AMBIENT_BLUR_RADIUS = 40.dp
+private const val COVERFLOW_AMBIENT_OVERSCAN = 1.3f
+private const val COVERFLOW_AMBIENT_TINT_TOP_ALPHA = 0.42f
+private const val COVERFLOW_AMBIENT_TINT_MID_ALPHA = 0.72f
 private const val COVERFLOW_DECK_VISIBLE_DEPTH = 2f
 private const val COVERFLOW_DECK_SCALE_DROP = 0.08f
 private const val COVERFLOW_DECK_PEEK_FRACTION = 0.1f
@@ -760,6 +766,14 @@ internal fun HomeHeroSection(
                                         if (isCoverflowStyle) {
                             val heroFadeColorState = LocalDynamicArtworkBackgroundColor.current
                             val themeBackground = MaterialTheme.colorScheme.background
+                            // Blurred copy of the artwork behind the cards (crossfades while swiping)...
+                            CoverflowAmbientBackdrop(
+                                layers = visiblePages,
+                                items = items,
+                                pagerState = pagerState,
+                                wide = coverflowLayout.wide,
+                            )
+                            // ...under a tint that darkens it for legibility and melts into the page at the bottom.
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -767,8 +781,8 @@ internal fun HomeHeroSection(
                                         val tint = heroFadeColorState?.value ?: themeBackground
                                         drawRect(
                                             Brush.verticalGradient(
-                                                0f to tint.copy(alpha = 0.78f),
-                                                0.72f to tint.copy(alpha = 0.92f),
+                                                0f to tint.copy(alpha = COVERFLOW_AMBIENT_TINT_TOP_ALPHA),
+                                                0.72f to tint.copy(alpha = COVERFLOW_AMBIENT_TINT_MID_ALPHA),
                                                 1f to tint,
                                             ),
                                         )
@@ -1823,6 +1837,57 @@ private fun resolveHeroTargetPage(
     }
 }
 
+
+/**
+ * Heavily blurred copy of each visible page's artwork, filling the hero. Alpha follows the pager position so
+ * the backdrop crossfades with the swipe. The artwork is requested at a tiny size: on Android 12+ the blur
+ * modifier finishes the job, and on older versions (where it does nothing) upscaling still gives a soft wash.
+ */
+@Composable
+private fun CoverflowAmbientBackdrop(
+    layers: List<HeroPageLayer>,
+    items: List<MetaPreview>,
+    pagerState: PagerState,
+    wide: Boolean,
+) {
+    val platformContext = LocalPlatformContext.current
+    Box(modifier = Modifier.fillMaxSize()) {
+        layers.forEach { layer ->
+            val item = items[layer.itemIndex]
+            val artworkUrl = if (wide) {
+                item.banner ?: item.landscapePoster ?: item.poster
+            } else {
+                item.poster ?: item.banner
+            }
+            if (artworkUrl != null) {
+                key(item.type, item.id, layer.page, wide) {
+                    val request = remember(artworkUrl) {
+                        ImageRequest.Builder(platformContext)
+                            .data(artworkUrl)
+                            .size(96, 96)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = request,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val position = (layer.page - pagerState.currentPage) -
+                                    pagerState.currentPageOffsetFraction
+                                alpha = (1f - abs(position)).coerceIn(0f, 1f)
+                                // Overscan so the soft blurred edges fall outside the hero's bounds.
+                                scaleX = COVERFLOW_AMBIENT_OVERSCAN
+                                scaleY = COVERFLOW_AMBIENT_OVERSCAN
+                            }
+                            .blur(COVERFLOW_AMBIENT_BLUR_RADIUS),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * Centered card with angled, slightly smaller neighbours peeking in from both edges (coverflow),

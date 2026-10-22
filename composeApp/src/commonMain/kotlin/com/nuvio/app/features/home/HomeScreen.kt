@@ -60,6 +60,7 @@ import com.nuvio.app.features.ai.NativeScope
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.features.home.components.HomeContinueWatchingHero
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonHero
@@ -1005,8 +1006,22 @@ fun HomeScreen(
         }
     }
 
+    // Continue Watching hero: only on the default Home page (the same place the Continue Watching row lives).
+    // Anything else, or nothing to resume, falls back to the Netflix-style hero, which has the same dimensions.
+    val isContinueWatchingHeroStyle = homeSettingsUiState.heroStyle == HomeHeroStyle.CONTINUE_WATCHING
+    val effectiveHeroStyle = if (isContinueWatchingHeroStyle) HomeHeroStyle.NETFLIX else homeSettingsUiState.heroStyle
+    val continueWatchingHeroItem = remember(continueWatchingItems, isContinueWatchingHeroStyle, categoryKeys, homeSettingsUiState.heroEnabled) {
+        if (!isContinueWatchingHeroStyle || categoryKeys != null || !homeSettingsUiState.heroEnabled) {
+            null
+        } else {
+            continueWatchingItems.firstOrNull {
+                it.resumePositionMs > 0L && !it.isNextUp && !it.isWatched && !it.isReleaseAlert
+            } ?: continueWatchingItems.firstOrNull { it.isNextUp && !it.isWatched && !it.isReleaseAlert }
+        }
+    }
+
     // Library membership is only observed for the Netflix hero, so other styles never recompose on library changes.
-    val heroSavedItemKeys = if (homeSettingsUiState.heroStyle == HomeHeroStyle.NETFLIX && onHeroSaveClick != null) {
+    val heroSavedItemKeys = if (effectiveHeroStyle == HomeHeroStyle.NETFLIX && onHeroSaveClick != null) {
         rememberHeroSavedItemKeys(heroItems)
     } else {
         emptySet()
@@ -1055,7 +1070,7 @@ fun HomeScreen(
     val hasRenderableHomeRows = visibleSections.isNotEmpty() || hasRenderableCollectionRows
     val showHeroSlot = !categoryIsEmpty && shouldShowHomeHeroSlot(
         heroEnabled = homeSettingsUiState.heroEnabled,
-        hasHeroItems = heroItems.isNotEmpty(),
+        hasHeroItems = heroItems.isNotEmpty() || continueWatchingHeroItem != null,
         isResolvingHeroSources = isResolvingHeroSources,
         hasRenderableHomeRows = hasRenderableHomeRows,
     )
@@ -1125,11 +1140,20 @@ fun HomeScreen(
                 if (showHeroSlot) {
                     item {
                         when {
+                            continueWatchingHeroItem != null -> HomeContinueWatchingHero(
+                                item = continueWatchingHeroItem,
+                                modifier = Modifier,
+                                viewportHeight = maxHeight,
+                                mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                                onResumeClick = onContinueWatchingClick,
+                                onActiveArtworkChange = onActiveHeroArtworkChange,
+                            )
+
                             showHeroSkeleton -> HomeSkeletonHero(
                                 modifier = Modifier,
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                heroStyle = homeSettingsUiState.heroStyle,
+                                heroStyle = effectiveHeroStyle,
                             )
 
                             heroItems.isNotEmpty() -> HomeHeroSection(
@@ -1137,7 +1161,7 @@ fun HomeScreen(
                                 modifier = Modifier,
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                heroStyle = homeSettingsUiState.heroStyle,
+                                heroStyle = effectiveHeroStyle,
                                 listState = homeListState,
                                 stretchPx = { heroStretchState.stretchPx },
                                 // animateCollectionGifs doubles as "Home is the visible route" — it already
@@ -1157,7 +1181,7 @@ fun HomeScreen(
                                 modifier = Modifier,
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                heroStyle = homeSettingsUiState.heroStyle,
+                                heroStyle = effectiveHeroStyle,
                             )
                         }
                     }

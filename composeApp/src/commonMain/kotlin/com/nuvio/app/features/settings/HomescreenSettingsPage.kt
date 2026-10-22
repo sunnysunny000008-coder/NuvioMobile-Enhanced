@@ -301,6 +301,13 @@ private fun HeroStyleOptions(
                 title = "Stacked Deck",
                 description = "Centered card with the next cards stacked behind it. Posters in portrait, backdrops with the title in landscape.",
             )
+            HeroStyleOption(
+                modifier = Modifier.fillMaxWidth(),
+                style = HomeHeroStyle.CONTINUE_WATCHING,
+                selectedStyle = selectedStyle,
+                title = "Continue Watching",
+                description = "Resume what you were watching, with a progress bar. Shows the Netflix-style trending hero when there is nothing to resume.",
+            )
         }
     }
 }

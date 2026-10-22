@@ -651,16 +651,47 @@ internal fun HomeHeroSection(
                             .height(layout.heroHeight)
                             .heroStretchZoom(stretchPx),
                     ) {
+                        // Coverflow uses a narrow poster stack over a softly tinted backdrop;
+                        // Peek uses wide cards with the adjacent card visible at the edge.
+                        if (isCoverflowStyle) {
+                            val heroFadeColorState = LocalDynamicArtworkBackgroundColor.current
+                            val themeBackground = MaterialTheme.colorScheme.background
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .drawBehind {
+                                        val tint = heroFadeColorState?.value ?: themeBackground
+                                        drawRect(tint.copy(alpha = 0.52f))
+                                        drawRect(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Black.copy(alpha = 0.10f),
+                                                    tint.copy(alpha = 0.18f),
+                                                    Color.Black.copy(alpha = 0.52f),
+                                                ),
+                                            ),
+                                        )
+                                    },
+                            )
+                        }
+
                         visiblePages.forEach { layer ->
                             val item = items[layer.itemIndex]
                             val artworkUrl = heroArtworkUrl(item, effectiveArtworkSource)
                             val isCurrentLayer = layer.page == currentPage
+                            val artworkWidthFraction = when {
+                                isCoverflowStyle -> 0.62f
+                                isPeekStyle -> 0.82f
+                                else -> 1f
+                            }
                             key(effectiveArtworkSource, item.type, item.id, artworkUrl) {
                                 AsyncImage(
                                     model = artworkUrl,
                                     contentDescription = item.name,
                                     modifier = Modifier
-                                        .fillMaxSize()
+                                        .fillMaxWidth(artworkWidthFraction)
+                                        .fillMaxHeight()
+                                        .align(Alignment.Center)
                                         .graphicsLayer {
                                             val offset = heroPageOffset(pagerState, layer.page)
                                             val visibility = (1f - abs(offset)).coerceIn(0f, 1f)
@@ -669,7 +700,11 @@ internal fun HomeHeroSection(
                                                 visibility > 0f -> 1f
                                                 else -> 0f
                                             }
-                                            translationX = -offset * heroWidthPx * artworkParallax
+                                            translationX = when {
+                                                isCoverflowStyle -> -offset * heroWidthPx * 0.68f
+                                                isPeekStyle -> -offset * heroWidthPx * 0.72f
+                                                else -> -offset * heroWidthPx * artworkParallax
+                                            }
                                             translationY = if (isCardStyle) 0f else heroBackgroundScrollTranslationY(scrollOffsetPx)
                                             scaleX = artworkBaseScale *
                                                 if (isCardStyle) 1f else heroBackgroundScrollScale(scrollOffsetPx)
@@ -1076,7 +1111,10 @@ internal fun HomeHeroReservedSpace(
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
 ) {
-    val isCardStyle = heroStyle == HomeHeroStyle.CARD
+    val isCardStyle = heroStyle == HomeHeroStyle.CARD ||
+        heroStyle == HomeHeroStyle.COVERFLOW ||
+        heroStyle == HomeHeroStyle.PEEK
+    val isPeekStyle = heroStyle == HomeHeroStyle.PEEK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -1087,8 +1125,8 @@ internal fun HomeHeroReservedSpace(
                 if (isCardStyle) {
                     Modifier.padding(
                         top = statusBarTopPadding + HERO_CARD_TOP_PADDING,
-                        start = HERO_CARD_HORIZONTAL_PADDING,
-                        end = HERO_CARD_HORIZONTAL_PADDING,
+                        start = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
+                        end = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
                     )
                 } else {
                     Modifier

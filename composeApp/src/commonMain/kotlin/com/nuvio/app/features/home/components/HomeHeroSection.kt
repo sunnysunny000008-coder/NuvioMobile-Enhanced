@@ -67,6 +67,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -127,7 +128,7 @@ private const val HERO_SCROLL_UP_SCALE_MULTIPLIER = 0.002f
 private const val HERO_SCROLL_MAX_SCALE = 1.3f
 private const val HERO_SWIPE_THRESHOLD_FRACTION = 0.16f
 private const val HERO_SWIPE_VELOCITY_THRESHOLD = 300f
-private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
+internal const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
 private const val MOBILE_HERO_VIEWPORT_RATIO = 0.82f
 private const val MOBILE_PORTRAIT_HERO_WIDTH_RATIO = 1.5f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
@@ -172,6 +173,31 @@ private const val CARD_WIDE_MAX_VIEWPORT_FRACTION = 0.72f
 internal val HERO_CARD_CORNER_RADIUS = 28.dp
 internal val HERO_CARD_HORIZONTAL_PADDING = 12.dp
 internal val HERO_CARD_TOP_PADDING = 8.dp
+
+/**
+ * User-tunable look of the hero for the active style.
+ * [cardScale] resizes the card / poster stack (1f = default); [cornerRadius] overrides the style's default
+ * rounding (null = default). Styles that do not support a given option simply ignore it.
+ */
+internal data class HomeHeroAppearance(
+    val cardScale: Float = 1f,
+    val cornerRadius: Dp? = null,
+)
+
+/** Clip shape of the whole hero container for [style]. */
+internal fun heroClipShape(style: HomeHeroStyle, appearance: HomeHeroAppearance): Shape = when (style) {
+    HomeHeroStyle.COVERFLOW, HomeHeroStyle.STACKED_DECK -> RectangleShape
+    HomeHeroStyle.CARD -> RoundedCornerShape(appearance.cornerRadius ?: HERO_CARD_CORNER_RADIUS)
+    HomeHeroStyle.NETFLIX, HomeHeroStyle.CONTINUE_WATCHING -> RectangleShape
+    HomeHeroStyle.FULL_BLEED -> {
+        val radius = appearance.cornerRadius ?: 28.dp
+        RoundedCornerShape(bottomStart = radius, bottomEnd = radius)
+    }
+}
+
+/** Share of the screen width the plain Card style occupies (it can only shrink). */
+internal fun heroCardWidthFraction(style: HomeHeroStyle, appearance: HomeHeroAppearance): Float =
+    if (style == HomeHeroStyle.CARD) appearance.cardScale.coerceIn(0.5f, 1f) else 1f
 
 internal fun heroUsesWideArtwork(
     maxWidth: Dp,
@@ -237,6 +263,8 @@ internal data class CoverflowMetrics(
     val topGap: Dp,
     val bottomGap: Dp,
     val infoHeight: Dp,
+    /** User card-size multiplier baked into [cardWidth] (portrait only), so neighbour spacing can ignore it. */
+    val scale: Float = 1f,
 ) {
     fun heroHeight(statusBarTopPadding: Dp): Dp =
         statusBarTopPadding + topGap + cardHeight + bottomGap + infoHeight
@@ -252,10 +280,11 @@ internal fun coverflowMetrics(
     statusBarTopPadding: Dp,
     isTablet: Boolean,
     deck: Boolean = false,
+    scale: Float = 1f,
 ): CoverflowMetrics {
     if (!heroUsesWideArtwork(maxWidth, viewportHeight, isTablet)) {
         val posterWidth = maxWidth *
-            if (deck) COVERFLOW_DECK_POSTER_WIDTH_FRACTION else COVERFLOW_POSTER_WIDTH_FRACTION
+            (if (deck) COVERFLOW_DECK_POSTER_WIDTH_FRACTION else COVERFLOW_POSTER_WIDTH_FRACTION) * scale
         return CoverflowMetrics(
             wide = false,
             cardWidth = posterWidth,
@@ -263,9 +292,10 @@ internal fun coverflowMetrics(
             topGap = COVERFLOW_TOP_GAP,
             bottomGap = COVERFLOW_POSTER_BOTTOM_GAP,
             infoHeight = COVERFLOW_DOTS_HEIGHT,
+            scale = scale,
         )
     }
-    var cardWidth = maxWidth * COVERFLOW_WIDE_WIDTH_FRACTION
+    var cardWidth = maxWidth * COVERFLOW_WIDE_WIDTH_FRACTION * scale
     if (viewportHeight != null) {
         val chrome = statusBarTopPadding + COVERFLOW_WIDE_TOP_GAP + COVERFLOW_WIDE_BOTTOM_GAP +
             COVERFLOW_WIDE_INFO_HEIGHT + COVERFLOW_WIDE_NAV_RESERVE
@@ -289,7 +319,8 @@ internal fun coverflowHeroHeight(
     viewportHeight: Dp?,
     isTablet: Boolean,
     deck: Boolean = false,
-): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet, deck)
+    scale: Float = 1f,
+): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet, deck, scale)
     .heroHeight(statusBarTopPadding)
 
 internal fun cardHeroHeight(
@@ -512,6 +543,10 @@ internal fun HomeHeroSection(
     savedItemKeys: Set<String> = emptySet(),
     /** Toggles library membership. When null the Netflix style hides its "Save to Library" button. */
     onToggleSaved: ((MetaPreview) -> Unit)? = null,
+    /** Time between automatic swipes in ms. 0 or less turns auto-swipe off. */
+    autoScrollIntervalMs: Long = HERO_AUTO_SCROLL_INTERVAL_MS,
+    /** Card size / corner roundness for the active style. */
+    appearance: HomeHeroAppearance = HomeHeroAppearance(),
 ) {
     if (items.isEmpty()) return
 
@@ -545,9 +580,11 @@ internal fun HomeHeroSection(
         }
     }
 
-    ScreenActivityEffect(autoScrollPage, items.size, effectiveTrailerPlaybackEnabled) { active ->
-        if (!active || items.size <= 1 || effectiveTrailerPlaybackEnabled) return@ScreenActivityEffect
-        delay(HERO_AUTO_SCROLL_INTERVAL_MS)
+    ScreenActivityEffect(autoScrollPage, items.size, effectiveTrailerPlaybackEnabled, autoScrollIntervalMs) { active ->
+        if (!active || items.size <= 1 || effectiveTrailerPlaybackEnabled || autoScrollIntervalMs <= 0L) {
+            return@ScreenActivityEffect
+        }
+        delay(autoScrollIntervalMs)
         while (pagerState.isScrollInProgress) {
             delay(100L)
         }
@@ -571,12 +608,7 @@ internal fun HomeHeroSection(
     } else {
         Modifier
     }
-    val heroShape = when {
-        isCoverflowStyle -> RectangleShape
-        isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
-        isNetflixStyle -> RectangleShape
-        else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
-    }
+    val heroShape = heroClipShape(heroStyle, appearance)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -584,7 +616,7 @@ internal fun HomeHeroSection(
     ) {
         BoxWithConstraints(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(heroCardWidthFraction(heroStyle, appearance))
                 .then(cardInsetModifier)
                 .homeHeroPagerGesture(
                     pagerState = pagerState,
@@ -614,6 +646,7 @@ internal fun HomeHeroSection(
                 statusBarTopPadding = statusBarTopPadding,
                 isTablet = baseLayout.isTablet,
                 deck = isDeckStyle,
+                scale = appearance.cardScale,
             )
             val layout = when {
                 isCoverflowStyle -> baseLayout.copy(
@@ -816,6 +849,7 @@ internal fun HomeHeroSection(
                                 metrics = coverflowLayout,
                                 topPadding = statusBarTopPadding + coverflowLayout.topGap,
                                 deck = isDeckStyle,
+                                cornerRadius = appearance.cornerRadius,
                             )
                         } else {
                         visiblePages.forEach { layer ->
@@ -1265,15 +1299,18 @@ internal fun HomeHeroReservedSpace(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    appearance: HomeHeroAppearance = HomeHeroAppearance(),
 ) {
     val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
     val isCardStyle = heroStyle == HomeHeroStyle.CARD || isCoverflowStyle
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
+    // Centres the (possibly narrower, user-scaled) card the same way the real hero's Column does.
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth(heroCardWidthFraction(heroStyle, appearance))
             .then(
                 if (isCardStyle && !isCoverflowStyle) {
                     Modifier.padding(
@@ -1285,14 +1322,7 @@ internal fun HomeHeroReservedSpace(
                     Modifier
                 },
             )
-            .clip(
-                when {
-                    isCoverflowStyle -> RectangleShape
-                    isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
-                    isNetflixStyle -> RectangleShape
-                    else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
-                },
-            ),
+            .clip(heroClipShape(heroStyle, appearance)),
     ) {
         val baseLayout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
@@ -1303,6 +1333,7 @@ internal fun HomeHeroReservedSpace(
             isCoverflowStyle -> coverflowHeroHeight(
                 maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet,
                 deck = heroStyle == HomeHeroStyle.STACKED_DECK,
+                scale = appearance.cardScale,
             )
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
@@ -1323,6 +1354,7 @@ internal fun HomeHeroReservedSpace(
                 .fillMaxWidth()
                 .height(heroHeight),
         )
+    }
     }
 }
 
@@ -1927,8 +1959,9 @@ private fun CoverflowPosterStack(
     metrics: CoverflowMetrics,
     topPadding: Dp,
     deck: Boolean = false,
+    cornerRadius: Dp? = null,
 ) {
-    val posterShape = RoundedCornerShape(COVERFLOW_POSTER_CORNER_RADIUS)
+    val posterShape = RoundedCornerShape(cornerRadius ?: COVERFLOW_POSTER_CORNER_RADIUS)
 
     // Deck: compose the front card, one card that has just left to the left, and the cards stacked behind it
     // (plus one more that fades in at the back). They are drawn furthest-back first, so the front card and a
@@ -1987,7 +2020,7 @@ private fun CoverflowPosterStack(
                             }
                             val scale = 1f - COVERFLOW_SIDE_SCALE_DROP * distance.coerceAtMost(1f)
                             translationX = position.coerceIn(-2f, 2f) *
-                                metrics.cardWidth.toPx() * COVERFLOW_SIDE_OFFSET_CARD_FRACTION
+                                (metrics.cardWidth / metrics.scale).toPx() * COVERFLOW_SIDE_OFFSET_CARD_FRACTION
                             scaleX = scale
                             scaleY = scale
                             // Inner edge tilts away from the viewer. Flip the sign if it looks reversed.

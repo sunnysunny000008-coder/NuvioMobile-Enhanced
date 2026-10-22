@@ -55,6 +55,9 @@ import com.nuvio.app.features.ai.AiRowKind
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeHeroStyle
+import com.nuvio.app.features.home.cardScaleRangePercent
+import com.nuvio.app.features.home.supportsCardScale
+import com.nuvio.app.features.home.supportsCornerRadius
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_retry
@@ -203,6 +206,13 @@ internal fun LazyListScope.homescreenSettingsContent(
                         isTablet = isTablet,
                         selectedStyle = settingsUiState.heroStyle,
                     )
+                    HeroAppearanceSettings(
+                        isTablet = isTablet,
+                        style = settingsUiState.heroStyle,
+                        autoScrollIntervalSeconds = settingsUiState.heroAutoScrollIntervalSeconds,
+                        cardScalePercent = settingsUiState.heroCardScalePercent(settingsUiState.heroStyle),
+                        cornerRadiusDp = settingsUiState.heroCornerRadiusDp(settingsUiState.heroStyle),
+                    )
                     SettingsGroup(isTablet = isTablet) {
                         androidx.compose.material3.ListItem(
                             headlineContent = { Text("Extended hero info") },
@@ -229,6 +239,128 @@ internal fun LazyListScope.homescreenSettingsContent(
                     HomeCategoryManagerEmbedded()
                 }
             }
+        }
+    }
+}
+
+/** Auto-swipe speed (all styles) plus card size and roundness for the currently selected style. */
+@Composable
+private fun HeroAppearanceSettings(
+    isTablet: Boolean,
+    style: HomeHeroStyle,
+    autoScrollIntervalSeconds: Int,
+    cardScalePercent: Int,
+    cornerRadiusDp: Int,
+) {
+    val options = HomeCatalogSettingsRepository.HERO_AUTO_SCROLL_OPTIONS_SECONDS
+    var intervalExpanded by remember { mutableStateOf(false) }
+    val styleName = when (style) {
+        HomeHeroStyle.FULL_BLEED -> "Full-bleed"
+        HomeHeroStyle.CARD -> "Card"
+        HomeHeroStyle.NETFLIX -> "Netflix"
+        HomeHeroStyle.COVERFLOW -> "Coverflow"
+        HomeHeroStyle.STACKED_DECK -> "Stacked Deck"
+        HomeHeroStyle.CONTINUE_WATCHING -> "Continue Watching"
+    }
+    fun intervalLabel(seconds: Int) = if (seconds <= 0) "Off" else "$seconds seconds"
+
+    SettingsGroup(isTablet = isTablet) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { intervalExpanded = true }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = "Auto-swipe",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "How often the hero moves to the next title on its own. Trailer playback pauses auto-swipe.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = intervalLabel(autoScrollIntervalSeconds),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium,
+                )
+                Icon(
+                    imageVector = if (intervalExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(
+                expanded = intervalExpanded,
+                onDismissRequest = { intervalExpanded = false },
+            ) {
+                options.forEach { seconds ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = intervalLabel(seconds),
+                                color = if (seconds == autoScrollIntervalSeconds) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                fontWeight = if (seconds == autoScrollIntervalSeconds) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        onClick = {
+                            intervalExpanded = false
+                            HomeCatalogSettingsRepository.setHeroAutoScrollIntervalSeconds(seconds)
+                        },
+                    )
+                }
+            }
+        }
+        if (style.supportsCardScale) {
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSliderRow(
+                title = "Card size · $styleName",
+                description = if (style == HomeHeroStyle.CARD) {
+                    "Make the card narrower. Saved separately for each style."
+                } else {
+                    "Resize the poster cards. Saved separately for each style. On tablets and landscape the size is capped to fit the screen."
+                },
+                value = cardScalePercent,
+                valueRange = style.cardScaleRangePercent,
+                step = 5,
+                isTablet = isTablet,
+                formatValue = { percent -> "$percent%" },
+                onValueChange = { HomeCatalogSettingsRepository.setHeroCardScalePercent(style, it) },
+            )
+        }
+        if (style.supportsCornerRadius) {
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSliderRow(
+                title = "Roundness · $styleName",
+                description = if (style == HomeHeroStyle.FULL_BLEED) {
+                    "Corner radius of the hero's bottom edge. Saved separately for each style."
+                } else {
+                    "Corner radius of the cards. Saved separately for each style."
+                },
+                value = cornerRadiusDp,
+                valueRange = HomeCatalogSettingsRepository.MIN_HERO_CORNER_RADIUS_DP..
+                    HomeCatalogSettingsRepository.MAX_HERO_CORNER_RADIUS_DP,
+                step = 2,
+                isTablet = isTablet,
+                formatValue = { dp -> if (dp <= 0) "Square" else "$dp dp" },
+                onValueChange = { HomeCatalogSettingsRepository.setHeroCornerRadiusDp(style, it) },
+            )
         }
     }
 }

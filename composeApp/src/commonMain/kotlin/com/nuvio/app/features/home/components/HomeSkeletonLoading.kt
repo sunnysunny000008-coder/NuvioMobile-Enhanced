@@ -71,6 +71,7 @@ internal fun HomeSkeletonHero(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    appearance: HomeHeroAppearance = HomeHeroAppearance(),
 ) {
     val brush = rememberHomeSkeletonBrush()
     val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
@@ -78,9 +79,10 @@ internal fun HomeSkeletonHero(
     val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth(heroCardWidthFraction(heroStyle, appearance))
             .then(
                 if (isCardStyle && !isCoverflowStyle) {
                     Modifier.padding(
@@ -92,14 +94,7 @@ internal fun HomeSkeletonHero(
                     Modifier
                 },
             )
-            .clip(
-                when {
-                    isCoverflowStyle -> RectangleShape
-                    isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
-                    isNetflixStyle -> RectangleShape
-                    else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
-                },
-            ),
+            .clip(heroClipShape(heroStyle, appearance)),
     ) {
         val layout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
@@ -111,6 +106,7 @@ internal fun HomeSkeletonHero(
             isCoverflowStyle -> coverflowHeroHeight(
                 maxWidth, statusBarTopPadding, viewportHeight, layout.isTablet,
                 deck = heroStyle == HomeHeroStyle.STACKED_DECK,
+                scale = appearance.cardScale,
             )
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
@@ -225,6 +221,7 @@ internal fun HomeSkeletonHero(
                 }
             }
         }
+    }
     }
 }
 

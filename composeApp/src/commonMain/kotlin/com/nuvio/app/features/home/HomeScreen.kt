@@ -61,6 +61,7 @@ import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeContinueWatchingHero
+import com.nuvio.app.features.home.components.HomeHeroAppearance
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonHero
@@ -1010,6 +1011,19 @@ fun HomeScreen(
     // Anything else, or nothing to resume, falls back to the Netflix-style hero, which has the same dimensions.
     val isContinueWatchingHeroStyle = homeSettingsUiState.heroStyle == HomeHeroStyle.CONTINUE_WATCHING
     val effectiveHeroStyle = if (isContinueWatchingHeroStyle) HomeHeroStyle.NETFLIX else homeSettingsUiState.heroStyle
+    // Per-style card size / roundness from Settings. Styles that don't support an option ignore it.
+    val heroAppearance = HomeHeroAppearance(
+        cardScale = if (effectiveHeroStyle.supportsCardScale) {
+            homeSettingsUiState.heroCardScalePercent(effectiveHeroStyle) / 100f
+        } else {
+            1f
+        },
+        cornerRadius = if (effectiveHeroStyle.supportsCornerRadius) {
+            homeSettingsUiState.heroCornerRadiusDp(effectiveHeroStyle).dp
+        } else {
+            null
+        },
+    )
     val continueWatchingHeroItem = remember(continueWatchingItems, isContinueWatchingHeroStyle, categoryKeys, homeSettingsUiState.heroEnabled) {
         if (!isContinueWatchingHeroStyle || categoryKeys != null || !homeSettingsUiState.heroEnabled) {
             null
@@ -1154,6 +1168,7 @@ fun HomeScreen(
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                                 heroStyle = effectiveHeroStyle,
+                                appearance = heroAppearance,
                             )
 
                             heroItems.isNotEmpty() -> HomeHeroSection(
@@ -1175,6 +1190,8 @@ fun HomeScreen(
                                 onActiveArtworkChange = onActiveHeroArtworkChange,
                                 savedItemKeys = heroSavedItemKeys,
                                 onToggleSaved = onHeroSaveClick,
+                                autoScrollIntervalMs = homeSettingsUiState.heroAutoScrollIntervalSeconds * 1000L,
+                                appearance = heroAppearance,
                             )
 
                             else -> HomeHeroReservedSpace(
@@ -1182,6 +1199,7 @@ fun HomeScreen(
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                                 heroStyle = effectiveHeroStyle,
+                                appearance = heroAppearance,
                             )
                         }
                     }

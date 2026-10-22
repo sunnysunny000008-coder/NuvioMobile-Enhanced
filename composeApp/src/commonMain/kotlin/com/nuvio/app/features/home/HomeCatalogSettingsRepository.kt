@@ -44,10 +44,27 @@ internal data class HomeCatalogSettingsUiState(
     val heroTrailerPlaybackEnabled: Boolean = false,
     val heroTrailerStartDelaySeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_TRAILER_START_DELAY_SECONDS,
     val heroTrailerStartUnmuted: Boolean = false,
+    /** Seconds between automatic hero swipes. 0 turns auto-swipe off. */
+    val heroAutoScrollIntervalSeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_AUTO_SCROLL_SECONDS,
+    /** Card size per style, keyed by [HomeHeroStyle.storageValue]. Missing = 100%. */
+    val heroCardScalePercents: Map<String, Int> = emptyMap(),
+    /** Corner radius (dp) per style, keyed by [HomeHeroStyle.storageValue]. Missing = the style's default. */
+    val heroCornerRadiusDps: Map<String, Int> = emptyMap(),
     val showCatalogType: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
+    fun heroCardScalePercent(style: HomeHeroStyle): Int =
+        (heroCardScalePercents[style.storageValue] ?: HomeCatalogSettingsRepository.DEFAULT_HERO_CARD_SCALE_PERCENT)
+            .coerceIn(style.cardScaleRangePercent)
+
+    fun heroCornerRadiusDp(style: HomeHeroStyle): Int =
+        (heroCornerRadiusDps[style.storageValue] ?: style.defaultCornerRadiusDp)
+            .coerceIn(
+                HomeCatalogSettingsRepository.MIN_HERO_CORNER_RADIUS_DP,
+                HomeCatalogSettingsRepository.MAX_HERO_CORNER_RADIUS_DP,
+            )
+
     val signature: String
         get() = buildString {
             append(heroEnabled)
@@ -61,6 +78,12 @@ internal data class HomeCatalogSettingsUiState(
             append(heroTrailerStartDelaySeconds)
             append('|')
             append(heroTrailerStartUnmuted)
+            append('|')
+            append(heroAutoScrollIntervalSeconds)
+            append('|')
+            append(heroCardScalePercents.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" })
+            append('|')
+            append(heroCornerRadiusDps.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" })
             append('|')
             append(showCatalogType)
             append('|')
@@ -113,6 +136,30 @@ internal enum class HomeHeroStyle(
             entries.firstOrNull { it.storageValue == value } ?: FULL_BLEED
     }
 }
+
+/** Styles whose card (or card-like hero) can be made smaller/larger. Full-bleed and Netflix are sized by the screen. */
+internal val HomeHeroStyle.supportsCardScale: Boolean
+    get() = this == HomeHeroStyle.CARD || this == HomeHeroStyle.COVERFLOW || this == HomeHeroStyle.STACKED_DECK
+
+/** Allowed card size (percent of the default size). Card can only shrink; it is already near full width. */
+internal val HomeHeroStyle.cardScaleRangePercent: IntRange
+    get() = when (this) {
+        HomeHeroStyle.CARD -> 70..100
+        HomeHeroStyle.COVERFLOW, HomeHeroStyle.STACKED_DECK -> 80..110
+        else -> 100..100
+    }
+
+/** Styles with rounded artwork. Netflix and Continue Watching are edge-to-edge rectangles. */
+internal val HomeHeroStyle.supportsCornerRadius: Boolean
+    get() = this == HomeHeroStyle.FULL_BLEED || this == HomeHeroStyle.CARD ||
+        this == HomeHeroStyle.COVERFLOW || this == HomeHeroStyle.STACKED_DECK
+
+internal val HomeHeroStyle.defaultCornerRadiusDp: Int
+    get() = when (this) {
+        HomeHeroStyle.FULL_BLEED, HomeHeroStyle.CARD -> 28
+        HomeHeroStyle.COVERFLOW, HomeHeroStyle.STACKED_DECK -> 24
+        else -> 0
+    }
 
 /**
  * Per-row card shape for a home catalog row. [DEFAULT] follows the global landscape mode from
@@ -190,6 +237,9 @@ private data class StoredHomeCatalogSettingsPayload(
     val heroTrailerPlaybackEnabled: Boolean = false,
     val heroTrailerStartDelaySeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_TRAILER_START_DELAY_SECONDS,
     val heroTrailerStartUnmuted: Boolean = false,
+    val heroAutoScrollIntervalSeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_AUTO_SCROLL_SECONDS,
+    val heroCardScalePercents: Map<String, Int> = emptyMap(),
+    val heroCornerRadiusDps: Map<String, Int> = emptyMap(),
     val showCatalogType: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
@@ -202,6 +252,14 @@ object HomeCatalogSettingsRepository {
     const val MIN_HERO_TRAILER_START_DELAY_SECONDS = 0
     const val MAX_HERO_TRAILER_START_DELAY_SECONDS = 10
     const val DEFAULT_HERO_TRAILER_START_DELAY_SECONDS = 0
+
+    /** Auto-swipe interval choices in seconds; 0 = off. */
+    const val DEFAULT_HERO_AUTO_SCROLL_SECONDS = 8
+    val HERO_AUTO_SCROLL_OPTIONS_SECONDS: List<Int> = listOf(3, 5, 8, 12, 20, 0)
+
+    const val DEFAULT_HERO_CARD_SCALE_PERCENT = 100
+    const val MIN_HERO_CORNER_RADIUS_DP = 0
+    const val MAX_HERO_CORNER_RADIUS_DP = 48
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -228,6 +286,9 @@ object HomeCatalogSettingsRepository {
     private var heroTrailerPlaybackEnabled = false
     private var heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
     private var heroTrailerStartUnmuted = false
+    private var heroAutoScrollIntervalSeconds = DEFAULT_HERO_AUTO_SCROLL_SECONDS
+    private var heroCardScalePercents: Map<String, Int> = emptyMap()
+    private var heroCornerRadiusDps: Map<String, Int> = emptyMap()
     private var showCatalogType = true
     private var hideUnreleasedContent = false
 
@@ -240,6 +301,9 @@ object HomeCatalogSettingsRepository {
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
+        heroAutoScrollIntervalSeconds = DEFAULT_HERO_AUTO_SCROLL_SECONDS
+        heroCardScalePercents = emptyMap()
+        heroCornerRadiusDps = emptyMap()
         showCatalogType = true
         hideUnreleasedContent = false
         definitions = emptyList()
@@ -262,6 +326,9 @@ object HomeCatalogSettingsRepository {
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
+        heroAutoScrollIntervalSeconds = DEFAULT_HERO_AUTO_SCROLL_SECONDS
+        heroCardScalePercents = emptyMap()
+        heroCornerRadiusDps = emptyMap()
         showCatalogType = true
         hideUnreleasedContent = false
         _uiState.value = HomeCatalogSettingsUiState()
@@ -388,6 +455,37 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setHeroAutoScrollIntervalSeconds(seconds: Int) {
+        ensureLoaded()
+        val normalized = seconds.coerceAtLeast(0)
+        if (heroAutoScrollIntervalSeconds == normalized) return
+        heroAutoScrollIntervalSeconds = normalized
+        publish()
+        persist()
+    }
+
+    /** Card size for one hero style, clamped to that style's allowed range. */
+    internal fun setHeroCardScalePercent(style: HomeHeroStyle, percent: Int) {
+        ensureLoaded()
+        if (!style.supportsCardScale) return
+        val clamped = percent.coerceIn(style.cardScaleRangePercent)
+        if (heroCardScalePercents[style.storageValue] == clamped) return
+        heroCardScalePercents = heroCardScalePercents + (style.storageValue to clamped)
+        publish()
+        persist()
+    }
+
+    /** Corner radius (dp) for one hero style. */
+    internal fun setHeroCornerRadiusDp(style: HomeHeroStyle, dp: Int) {
+        ensureLoaded()
+        if (!style.supportsCornerRadius) return
+        val clamped = dp.coerceIn(MIN_HERO_CORNER_RADIUS_DP, MAX_HERO_CORNER_RADIUS_DP)
+        if (heroCornerRadiusDps[style.storageValue] == clamped) return
+        heroCornerRadiusDps = heroCornerRadiusDps + (style.storageValue to clamped)
+        publish()
+        persist()
+    }
+
     fun setShowCatalogType(enabled: Boolean) {
         ensureLoaded()
         if (showCatalogType == enabled) return
@@ -447,6 +545,9 @@ object HomeCatalogSettingsRepository {
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
+        heroAutoScrollIntervalSeconds = DEFAULT_HERO_AUTO_SCROLL_SECONDS
+        heroCardScalePercents = emptyMap()
+        heroCornerRadiusDps = emptyMap()
         showCatalogType = true
         hideUnreleasedContent = false
         preferences = emptyMap()
@@ -506,6 +607,9 @@ object HomeCatalogSettingsRepository {
                 MAX_HERO_TRAILER_START_DELAY_SECONDS,
             )
             heroTrailerStartUnmuted = parsedPayload.heroTrailerStartUnmuted
+            heroAutoScrollIntervalSeconds = parsedPayload.heroAutoScrollIntervalSeconds.coerceAtLeast(0)
+            heroCardScalePercents = parsedPayload.heroCardScalePercents
+            heroCornerRadiusDps = parsedPayload.heroCornerRadiusDps
             showCatalogType = parsedPayload.showCatalogType
             hideUnreleasedContent = parsedPayload.hideUnreleasedContent
             preferences = parsedPayload.items.associateBy { it.key }
@@ -636,6 +740,9 @@ object HomeCatalogSettingsRepository {
             heroTrailerPlaybackEnabled = heroTrailerPlaybackEnabled,
             heroTrailerStartDelaySeconds = heroTrailerStartDelaySeconds,
             heroTrailerStartUnmuted = heroTrailerStartUnmuted,
+            heroAutoScrollIntervalSeconds = heroAutoScrollIntervalSeconds,
+            heroCardScalePercents = heroCardScalePercents,
+            heroCornerRadiusDps = heroCornerRadiusDps,
             showCatalogType = showCatalogType,
             hideUnreleasedContent = hideUnreleasedContent,
             items = items,
@@ -652,6 +759,9 @@ object HomeCatalogSettingsRepository {
                     heroTrailerPlaybackEnabled = heroTrailerPlaybackEnabled,
                     heroTrailerStartDelaySeconds = heroTrailerStartDelaySeconds,
                     heroTrailerStartUnmuted = heroTrailerStartUnmuted,
+                    heroAutoScrollIntervalSeconds = heroAutoScrollIntervalSeconds,
+                    heroCardScalePercents = heroCardScalePercents,
+                    heroCornerRadiusDps = heroCornerRadiusDps,
                     showCatalogType = showCatalogType,
                     hideUnreleasedContent = hideUnreleasedContent,
                     items = preferences.values.sortedBy { it.order },

@@ -54,7 +54,9 @@ import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.ai.AiRecommendationsRepository
 import com.nuvio.app.features.ai.AiSettingsRepository
+import com.nuvio.app.features.ai.NativeRecommendationRow
 import com.nuvio.app.features.ai.NativeRecommendationsRepository
+import com.nuvio.app.features.ai.NativeScope
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -943,8 +945,21 @@ fun HomeScreen(
     val collectionsMap = remember(visibleCollections) {
         visibleCollections.associateBy { "collection_${it.id}" }
     }
-    val sectionsMap = remember(homeUiState.sections) {
-        homeUiState.sections.associateBy(HomeCatalogSection::key)
+    // TMDB rows of the active category, scoped to its media and with the chooser's rename applied.
+    val nativeCategorySections = remember(nativeRecommendationsUiState, homeSettingsUiState.items, activeCategory?.id) {
+        val nativeScope = nativeScopeFor(activeCategory?.id)
+        val scoped = if (!nativeRecommendationsUiState.enabled) emptyList()
+        else if (nativeScope == NativeScope.ALL) nativeRecommendationsUiState.sections
+        else nativeRecommendationsUiState.scopedSections[nativeScope].orEmpty()
+        scoped.mapNotNull { section ->
+            val row = NativeRecommendationRow.fromKey(section.key.removePrefix("native_")) ?: return@mapNotNull null
+            if (row !in nativeRecommendationsUiState.enabledRows) return@mapNotNull null
+            val customTitle = homeSettingsUiState.items.firstOrNull { it.key == row.catalogKey }?.customTitle?.takeIf { it.isNotBlank() }
+            if (customTitle != null) section.copy(title = customTitle) else section
+        }
+    }
+    val sectionsMap = remember(homeUiState.sections, nativeCategorySections) {
+        (homeUiState.sections + nativeCategorySections).associateBy(HomeCatalogSection::settingsKey)
     }
     val enabledHomeItems = remember(homeSettingsUiState.items, categoryKeys) {
         if (categoryKeys == null) {
@@ -954,9 +969,9 @@ fun HomeScreen(
             categoryKeys.mapNotNull { key -> itemsByKey[key] }
         }
     }
-    val visibleSections = remember(homeUiState.sections, enabledHomeItems) {
+    val visibleSections = remember(homeUiState.sections, nativeCategorySections, enabledHomeItems) {
         val keys = enabledHomeItems.filterNot { it.isCollection }.mapTo(HashSet()) { it.key }
-        homeUiState.sections.filter { it.key in keys }
+        (homeUiState.sections + nativeCategorySections).filter { it.settingsKey() in keys }
     }
     val heroExcludedKeys = activeCategory?.heroExcludedKeys.orEmpty()
     val heroItems = remember(
@@ -974,7 +989,7 @@ fun HomeScreen(
             // The hero is fed by the catalogs of the active category (see the star toggles in the
             // category manager), so every category has its own hero.
             val derived = visibleSections
-                .filter { section -> section.key !in heroExcludedKeys }
+                .filter { section -> section.settingsKey() !in heroExcludedKeys }
                 .flatMap { section -> section.items }
                 .distinctBy { item -> "${item.type}:${item.id}" }
                 .shuffled(Random(activeCategory?.id.orEmpty().hashCode()))
@@ -1314,7 +1329,7 @@ fun HomeScreen(
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
-                                            showRankNumbers = section.key in categoryState.rankedKeys,
+                                            showRankNumbers = section.settingsKey() in categoryState.rankedKeys,
                                             rankSettings = categoryState.rank,
                                             onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
                                                 onCatalogClick?.let { { it(section) } }
@@ -1347,32 +1362,6 @@ fun HomeScreen(
                                             onPosterClick = onPosterClick,
                                             onPosterLongClick = onPosterLongClick,
                                         )
-                                    }
-                                }
-                            }
-                            if (nativeRecommendationsUiState.enabled) {
-                                nativeRecommendationsUiState.sections.forEach { section ->
-                                    val nativeRow = com.nuvio.app.features.ai.NativeRecommendationRow.fromKey(section.key.removePrefix("native_"))
-                                    val catalogPreference = nativeRow?.let { row -> homeSettingsUiState.items.firstOrNull { it.key == row.catalogKey } }
-                                    if (section.items.isNotEmpty() && catalogPreference?.enabled != false && nativeRow != null && nativeRow in nativeRecommendationsUiState.enabledRows) {
-                                        val displaySection = catalogPreference?.customTitle?.takeIf { it.isNotBlank() }?.let { section.copy(title = it) } ?: section
-                                        item(key = "native_recommendation_${section.key}") {
-                                            HomeCatalogRowSection(
-                                                section = displaySection,
-                                                entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
-                                                modifier = Modifier.padding(bottom = 12.dp),
-                                                sectionPadding = homeSectionPadding,
-                                                onViewAllClick = if (displaySection.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
-                                                    onCatalogClick?.let { { it(displaySection) } }
-                                                } else {
-                                                    null
-                                                },
-                                                watchedKeys = watchedUiState.watchedKeys,
-                                                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
-                                                onPosterClick = onPosterClick,
-                                                onPosterLongClick = onPosterLongClick,
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -2243,4 +2232,16 @@ private fun rememberHeroSavedItemKeys(items: List<MetaPreview>): Set<String> {
             .filter { item -> LibraryRepository.isSaved(item.id, item.type) }
             .mapTo(HashSet()) { item -> item.stableKey() }
     }
+}
+
+
+/** TMDB rows are keyed "native_<row>" in sections but "native_rec_<row>" in the chooser. */
+private fun HomeCatalogSection.settingsKey(): String =
+    if (key.startsWith("native_") && !key.startsWith("native_rec_")) "native_rec_" + key.removePrefix("native_") else key
+
+private fun nativeScopeFor(categoryId: String?): NativeScope = when (categoryId) {
+    HOME_CATEGORY_MOVIES_ID -> NativeScope.MOVIES
+    HOME_CATEGORY_TV_ID -> NativeScope.TV
+    HOME_CATEGORY_ANIME_ID -> NativeScope.ANIME
+    else -> NativeScope.ALL
 }

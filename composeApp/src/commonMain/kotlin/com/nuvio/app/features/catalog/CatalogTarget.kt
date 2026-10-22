@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.features.ai.NativeScope
 import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.library.LibrarySortOption
 import kotlinx.serialization.Serializable
@@ -46,6 +47,7 @@ sealed interface CatalogTarget {
     data class TmdbRecommendations(
         val rowKey: String,
         override val contentType: String,
+        val scope: NativeScope = NativeScope.ALL,
     ) : CatalogTarget {
         override val supportsPagination: Boolean = false
     }

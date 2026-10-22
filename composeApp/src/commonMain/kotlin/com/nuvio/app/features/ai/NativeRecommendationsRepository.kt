@@ -63,6 +63,12 @@ enum class NativeRecommendationRow(
     }
 }
 
+/** Which titles a TMDB row may hold. ALL is the home mix; the others back the built-in categories. */
+enum class NativeScope(
+    /** Share of series in the row: 0 = movies only, 100 = series only. Null keeps the viewer's mix. */
+    val seriesPercent: Int?,
+) { ALL(null), MOVIES(0), TV(100), ANIME(50) }
+
 /** Everything the viewer can tune about native recommendations. Saved per profile. */
 data class NativeRecommendationPreferences(
     val likedGenreIds: Set<Int> = emptySet(),
@@ -99,6 +105,8 @@ data class NativeRecommendationsUiState(
     val learnedFromHistory: Boolean = false,
     /** Titles the viewer hid with "Not interested". */
     val notInterestedCount: Int = 0,
+    /** Rows for the built-in movies, TV and anime categories; the home mix lives in [sections]. */
+    val scopedSections: Map<NativeScope, List<HomeCatalogSection>> = emptyMap(),
 )
 
 object NativeRecommendationsRepository {
@@ -121,6 +129,7 @@ object NativeRecommendationsRepository {
     private val launchShuffleSeed: Long = Random.nextLong()
     private const val KEY_NOT_INTERESTED = "native_not_interested"
 
+    private const val ANIMATION_GENRE_ID = 16
     private const val ROW_LIMIT = 20
     /** Extra titles each row fetches so cross-row de-duplication can backfill without coming up short. */
     private const val ROW_RESERVE = 8
@@ -196,6 +205,12 @@ object NativeRecommendationsRepository {
                 val remaining = section.items.filterNot { it.id == preview.id }
                 section.copy(items = remaining, availableItemCount = remaining.size)
             },
+            scopedSections = _uiState.value.scopedSections.mapValues { (_, scoped) ->
+                scoped.map { section ->
+                    val remaining = section.items.filterNot { it.id == preview.id }
+                    section.copy(items = remaining, availableItemCount = remaining.size)
+                }
+            },
             notInterestedCount = notInterested.size,
         )
     }
@@ -235,6 +250,78 @@ object NativeRecommendationsRepository {
      */
     private fun <T> orderTitles(row: NativeRecommendationRow, items: List<T>, shuffle: Boolean): List<T> =
         if (shuffle) items.shuffled(Random(launchShuffleSeed + row.ordinal)) else items
+
+    /** Rows for one built-in category; the home mix is returned for [NativeScope.ALL]. */
+    fun sectionsFor(targetScope: NativeScope): List<HomeCatalogSection> =
+        if (targetScope == NativeScope.ALL) _uiState.value.sections
+        else _uiState.value.scopedSections[targetScope].orEmpty()
+
+    /** The rows for one built-in category, built with the same taste profile and hidden titles. */
+    private suspend fun buildScopedSections(
+        targetScope: NativeScope,
+        snapshot: NativeRecommendationsUiState,
+        learned: NativeTasteSignals,
+        language: String,
+        force: Boolean,
+    ): List<HomeCatalogSection> {
+        val prefs = snapshot.prefs.copy(seriesPercent = targetScope.seriesPercent ?: snapshot.prefs.seriesPercent)
+        val hidden = notInterested
+        val signals = learned.copy(
+            genreWeights = NativeRanking.applyNotInterested(learned.genreWeights, hidden.map { it.genreIds }),
+        )
+        val context = RowContext(
+            prefs = prefs,
+            signals = signals,
+            blockedIds = hidden.mapTo(HashSet()) { it.id },
+            blockedNames = hidden.map { normalizeAiTitle(it.name) }.filterTo(HashSet()) { it.isNotEmpty() },
+            language = language,
+            page = 1 + refreshNonce % 3,
+            force = force,
+            liked = prefs.likedGenreIds.map(NativeRanking::canonicalGenre).toSet(),
+            disliked = prefs.dislikedGenreIds.map(NativeRanking::canonicalGenre).toSet(),
+            today = isoDate(Clock.System.now().toEpochMilliseconds()),
+            gate = Semaphore(5),
+            scope = targetScope,
+        )
+        val built = coroutineScope {
+            snapshot.enabledRows.sortedBy { it.ordinal }.map { row ->
+                async {
+                    try {
+                        buildRow(row, context)
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (error: Throwable) {
+                        null
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        val deduped = NativeRanking.dedupeAcrossRows(built.map { it.items }, { it.id }, ROW_LIMIT, MIN_ROW_ITEMS)
+        return built.zip(deduped).mapNotNull { (row, items) ->
+            if (items.isEmpty()) null
+            else toSection(row.row, orderTitles(row.row, items, prefs.shuffleTitles), context)
+        }.withoutHiddenTitles()
+    }
+
+    /**
+     * Anime is TMDB animation (genre 16) from Japan: Japanese-language films and Japanese-origin
+     * series. Other scopes pass the query through unchanged.
+     */
+    private fun scopedFilters(
+        media: TmdbEntityMediaType,
+        filters: Map<String, String>,
+        ctx: RowContext,
+    ): Map<String, String> {
+        if (ctx.scope != NativeScope.ANIME) return filters
+        val scoped = filters.toMutableMap()
+        val genres = scoped["with_genres"]
+        scoped["with_genres"] = if (genres == null || '|' in genres) ANIMATION_GENRE_ID.toString()
+        else "$ANIMATION_GENRE_ID,$genres"
+        scoped.remove("with_original_language")
+        if (media == TmdbEntityMediaType.MOVIE) scoped["with_original_language"] = "ja"
+        else scoped["with_origin_country"] = "JP"
+        return scoped
+    }
 
     /** Comma separated choices; the old single-choice value "any" means no restriction. */
     private fun words(raw: String): Set<String> =
@@ -358,6 +445,11 @@ object NativeRecommendationsRepository {
                     lastUpdatedEpochMs = Clock.System.now().toEpochMilliseconds(),
                     errorMessage = if (sections.isEmpty()) "No native recommendations found. Loosen the filters or check your TMDB settings." else null,
                 )
+                // The built-in categories get their own rows: same taste, limited to their media.
+                val scopedSections = NativeScope.values()
+                    .filter { it != NativeScope.ALL }
+                    .associateWith { targetScope -> buildScopedSections(targetScope, snapshot, learned, language, force) }
+                _uiState.value = _uiState.value.copy(scopedSections = scopedSections)
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Throwable) {
@@ -382,8 +474,13 @@ object NativeRecommendationsRepository {
         val disliked: Set<Int>,
         val today: String,
         val gate: Semaphore,
+        val scope: NativeScope = NativeScope.ALL,
     ) {
         val topGenres: List<Int> = NativeRanking.topGenres(signals.genreWeights, liked, disliked, 3)
+
+        /** Anime rows keep only animated titles, so mixed pools are trimmed here. */
+        fun accepts(candidate: NativeDiscoverCandidate): Boolean =
+            scope != NativeScope.ANIME || ANIMATION_GENRE_ID in candidate.genreIds
         val excludedNames: Set<String> =
             (if (prefs.hideWatched) signals.watchedNames else emptySet()) + blockedNames
     }
@@ -453,7 +550,7 @@ object NativeRecommendationsRepository {
             title = seed?.let { "Because you watched ${it.title.name}" } ?: row.title,
             subtitle = if (seed != null) "People who watched it also watched these" else row.subtitle,
             addonName = "TMDB",
-            target = CatalogTarget.TmdbRecommendations(row.key, (row.mediaOnly ?: TmdbEntityMediaType.MOVIE).value),
+            target = CatalogTarget.TmdbRecommendations(row.key, (row.mediaOnly ?: TmdbEntityMediaType.MOVIE).value, ctx.scope),
             items = items,
             availableItemCount = items.size,
         )
@@ -501,7 +598,7 @@ object NativeRecommendationsRepository {
         var boosts: Map<String, Double> = emptyMap()
 
         fun rank(pool: List<NativeDiscoverCandidate>) =
-            NativeRanking.rank(pool, weights, ctx.liked, ctx.disliked, excluded, ctx.blockedIds, boosts)
+            NativeRanking.rank(pool.filter { ctx.accepts(it) }, weights, ctx.liked, ctx.disliked, excluded, ctx.blockedIds, boosts)
 
         val pool: List<NativeDiscoverCandidate> = when (row.kind) {
             NativeRowKind.ForYou -> {
@@ -675,7 +772,7 @@ object NativeRecommendationsRepository {
         ignoreEra: Boolean,
         extra: Map<String, String>,
     ): List<NativeDiscoverCandidate> =
-        variants(media, ctx, styles, ignoreEra).flatMap { fetchPage(media, it + extra, ctx) }
+        variants(media, ctx, styles, ignoreEra).flatMap { fetchPage(media, scopedFilters(media, it + extra, ctx), ctx) }
 
     private suspend fun fetchPage(
         media: TmdbEntityMediaType,

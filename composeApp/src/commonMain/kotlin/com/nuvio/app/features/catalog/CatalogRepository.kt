@@ -256,7 +256,7 @@ private suspend fun fetchCollectionSourcePage(
 
 /** A TMDB recommendation row opens with the titles it already holds, all on one page. */
 private fun tmdbRecommendationsPage(target: CatalogTarget.TmdbRecommendations): CatalogPage {
-    val items = NativeRecommendationsRepository.uiState.value.sections
+    val items = NativeRecommendationsRepository.sectionsFor(target.scope)
         .firstOrNull { it.key == "native_${target.rowKey}" }
         ?.items
         .orEmpty()

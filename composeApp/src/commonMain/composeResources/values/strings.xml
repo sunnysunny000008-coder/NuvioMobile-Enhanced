@@ -2960,6 +2960,11 @@
     <string name="native_rec_decades">Decades in the row</string>
     <string name="native_rec_decades_desc">Pick one or more. They are blended into a single row.</string>
     <string name="native_rec_decade_label">%1$ds</string>
+    <string name="native_rec_not_interested">Not interested</string>
+    <string name="native_rec_not_interested_toast">Got it. You\'ll see fewer picks like this.</string>
+    <string name="native_rec_hidden_titles">Hidden titles</string>
+    <string name="native_rec_hidden_titles_desc_count">%1$d titles you marked as not interested. Tap to show them again.</string>
+    <string name="native_rec_hidden_titles_desc_empty">Long-press a recommended title and choose Not interested to hide it.</string>
     <string name="native_rec_genre_28">Action</string>
     <string name="native_rec_genre_12">Adventure</string>
     <string name="native_rec_genre_16">Animation</string>

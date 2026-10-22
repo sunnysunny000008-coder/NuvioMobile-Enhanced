@@ -518,6 +518,44 @@ object TmdbMetadataService {
         return keywords
     }
 
+    /**
+     * TMDB's own "viewers of X also watched" list for a title, as ranked candidates (TMDB returns
+     * them most relevant first). This is collaborative-filtering data, so it is far less noisy than
+     * matching on keywords, and the genre / vote data lets the native recommender score it too.
+     */
+    suspend fun fetchNativeRecommendationCandidates(
+        itemId: String,
+        itemType: String,
+        language: String,
+        page: Int = 1,
+        forceRefresh: Boolean = false,
+    ): List<NativeDiscoverCandidate> {
+        val mediaType = normalizeMetaType(itemType)
+        if (mediaType != "movie" && mediaType != "tv") return emptyList()
+        val tmdbId = TmdbService.ensureTmdbId(itemId, mediaType)?.toIntOrNull() ?: return emptyList()
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val safePage = page.coerceAtLeast(1)
+        val cacheKey = "native-recs:$tmdbId:$mediaType:$normalizedLanguage:$safePage"
+        if (!forceRefresh) nativeCandidateCache[cacheKey]?.let { return it }
+        // /recommendations results have the same shape as Discover results.
+        val response = fetch<TmdbDiscoverResponse>(
+            endpoint = "$mediaType/$tmdbId/recommendations",
+            query = mapOf("language" to normalizedLanguage, "page" to safePage.toString()),
+        ) ?: return emptyList()
+        val entityType = if (mediaType == "tv") TmdbEntityMediaType.TV else TmdbEntityMediaType.MOVIE
+        val mapped = response.results.mapNotNull { result ->
+            val preview = mapEntityDiscoverResult(result, entityType, normalizedLanguage, emptyMap()) ?: return@mapNotNull null
+            NativeDiscoverCandidate(
+                preview = preview,
+                genreIds = result.genreIds,
+                voteAverage = result.voteAverage ?: 0.0,
+                voteCount = result.voteCount ?: 0,
+            )
+        }.distinctBy { it.preview.id }
+        nativeCandidateCache[cacheKey] = mapped
+        return mapped
+    }
+
     /** Native recommendation rows backed directly by TMDB Discover filters. */
     suspend fun fetchNativeDiscoverRow(
         mediaType: TmdbEntityMediaType,

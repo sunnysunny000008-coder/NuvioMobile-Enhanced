@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -183,6 +184,7 @@ import com.nuvio.app.features.tracking.toggleTrackingLibraryMembership
 import com.nuvio.app.features.updater.AppUpdaterHost
 import com.nuvio.app.features.updater.AppUpdaterPlatform
 import com.nuvio.app.features.updater.rememberAppUpdaterController
+import com.nuvio.app.features.ai.NativeRecommendationsRepository
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
@@ -2085,6 +2087,11 @@ internal fun MainAppContent(
                     )
                     val removesFromLibrary = isSaved &&
                         (posterActionTarget.libraryItem != null || !isRemoteLibrarySource)
+                    // "Not interested" only appears for titles currently shown on a native TMDB row.
+                    val canHideRecommendation = posterActionTarget.libraryItem == null &&
+                        NativeRecommendationsRepository.isRecommended(preview.id)
+                    val notInterestedLabel = stringResource(Res.string.native_rec_not_interested)
+                    val notInterestedToast = stringResource(Res.string.native_rec_not_interested_toast)
                     NuvioPosterZoomActionOverlay(
                         imageUrl = selectedPosterAnchor?.imageUrl ?: preview.poster,
                         title = preview.name,
@@ -2227,6 +2234,20 @@ internal fun MainAppContent(
                                     }
                                 },
                             ),
+                        ) + listOfNotNull(
+                            if (canHideRecommendation) {
+                                PosterZoomOverlayAction(
+                                    icon = Icons.Default.VisibilityOff,
+                                    label = notInterestedLabel,
+                                    isDestructive = true,
+                                    onSelected = {
+                                        NativeRecommendationsRepository.markNotInterested(preview)
+                                        NuvioToastController.show(notInterestedToast)
+                                    },
+                                )
+                            } else {
+                                null
+                            },
                         ),
                         backdrop = posterOverlayBackdrop,
                         onDismissed = {

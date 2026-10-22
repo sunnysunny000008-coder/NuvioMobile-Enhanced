@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -170,6 +171,19 @@ internal fun LazyListScope.nativeRecommendationsSettingsContent(isTablet: Boolea
                                     )
                                 }
                             },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.native_rec_hidden_titles),
+                            description = if (state.notInterestedCount > 0) {
+                                stringResource(Res.string.native_rec_hidden_titles_desc_count, state.notInterestedCount)
+                            } else {
+                                stringResource(Res.string.native_rec_hidden_titles_desc_empty)
+                            },
+                            icon = Icons.Rounded.VisibilityOff,
+                            enabled = state.notInterestedCount > 0,
+                            isTablet = isTablet,
+                            onClick = NativeRecommendationsRepository::clearNotInterested,
                         )
                     }
                 }

@@ -94,6 +94,8 @@ data class NativeRecommendationsUiState(
     val lastUpdatedEpochMs: Long? = null,
     /** True once watch history gave the recommender real taste signals. */
     val learnedFromHistory: Boolean = false,
+    /** Titles the viewer hid with "Not interested". */
+    val notInterestedCount: Int = 0,
 )
 
 object NativeRecommendationsRepository {
@@ -110,8 +112,13 @@ object NativeRecommendationsRepository {
     private const val KEY_HIDE_WATCHED = "native_hide_watched"
     private const val KEY_LEARN = "native_learn_history"
     private const val KEY_DECADES = "native_decades"
+    private const val KEY_NOT_INTERESTED = "native_not_interested"
 
     private const val ROW_LIMIT = 20
+    /** Extra titles each row fetches so cross-row de-duplication can backfill without coming up short. */
+    private const val ROW_RESERVE = 8
+    private const val MIN_ROW_ITEMS = 6
+    private const val MAX_NOT_INTERESTED = 200
     private const val MAX_VARIANTS = 6
     private const val REFRESH_DEBOUNCE_MS = 700L
 
@@ -125,11 +132,21 @@ object NativeRecommendationsRepository {
     /** Each manual refresh moves to the next TMDB result page, so the rows actually change. */
     private var refreshNonce = 0
 
+    /** Titles hidden with "Not interested". Replaced, never mutated, so refresh can read it safely. */
+    @Volatile
+    private var notInterested: List<NotInterestedEntry> = emptyList()
+
+    /** TMDB genre ids of the titles currently on screen, so hiding one can lower its genres. */
+    @Volatile
+    private var shownGenres: Map<String, List<Int>> = emptyMap()
+
     fun onProfileChanged() {
         refreshJob?.cancel()
         debounceJob?.cancel()
         NativeTasteEngine.invalidate()
         loaded = false
+        notInterested = emptyList()
+        shownGenres = emptyMap()
         _uiState.value = NativeRecommendationsUiState()
         ensureLoaded()
     }
@@ -139,11 +156,51 @@ object NativeRecommendationsRepository {
         loaded = true
         val storedRows = AiSettingsStorage.load(KEY_ROWS)
             ?.split(',')?.mapNotNull { NativeRecommendationRow.fromStoredKey(it.trim()) }?.toSet()
+        notInterested = NotInterestedEntry.decode(AiSettingsStorage.load(KEY_NOT_INTERESTED)).takeLast(MAX_NOT_INTERESTED)
         _uiState.value = NativeRecommendationsUiState(
             enabled = AiSettingsStorage.load(KEY_ENABLED)?.toBooleanStrictOrNull() ?: false,
             enabledRows = storedRows ?: NativeRecommendationRow.values().toSet(),
             prefs = loadPreferences(),
+            notInterestedCount = notInterested.size,
         )
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // "Not interested"
+    // ---------------------------------------------------------------------------------------
+
+    /** True when [previewId] is currently shown on one of the native rows. */
+    fun isRecommended(previewId: String): Boolean {
+        val state = _uiState.value
+        return state.enabled && state.sections.any { section -> section.items.any { it.id == previewId } }
+    }
+
+    /**
+     * Hides [preview] from every native row for good and lowers the genres it carried. The card
+     * disappears right away; the genre nudge shows up the next time the rows are rebuilt.
+     */
+    fun markNotInterested(preview: MetaPreview) {
+        ensureLoaded()
+        val entry = NotInterestedEntry(preview.id, preview.name, shownGenres[preview.id].orEmpty())
+        notInterested = (notInterested.filterNot { it.id == entry.id } + entry).takeLast(MAX_NOT_INTERESTED)
+        AiSettingsStorage.save(KEY_NOT_INTERESTED, NotInterestedEntry.encode(notInterested))
+        _uiState.value = _uiState.value.copy(
+            sections = _uiState.value.sections.map { section ->
+                val remaining = section.items.filterNot { it.id == preview.id }
+                section.copy(items = remaining, availableItemCount = remaining.size)
+            },
+            notInterestedCount = notInterested.size,
+        )
+    }
+
+    /** Brings every hidden title back and rebuilds the rows. */
+    fun clearNotInterested() {
+        ensureLoaded()
+        if (notInterested.isEmpty()) return
+        notInterested = emptyList()
+        AiSettingsStorage.save(KEY_NOT_INTERESTED, "")
+        _uiState.value = _uiState.value.copy(notInterestedCount = 0)
+        refresh()
     }
 
     private fun loadPreferences(): NativeRecommendationPreferences {
@@ -238,10 +295,19 @@ object NativeRecommendationsRepository {
                 val snapshot = _uiState.value
                 val prefs = snapshot.prefs
                 val language = TmdbSettingsRepository.snapshot().language
-                val signals = if (prefs.learnFromHistory) NativeTasteEngine.signals(language, force) else NativeTasteSignals.EMPTY
+                val learned = if (prefs.learnFromHistory) {
+                    NativeTasteEngine.signals(language, force, recommendationPage = 1 + refreshNonce % 2)
+                } else NativeTasteSignals.EMPTY
+                // Hidden titles always count, even with history learning off: they are explicit feedback.
+                val hidden = notInterested
+                val signals = learned.copy(
+                    genreWeights = NativeRanking.applyNotInterested(learned.genreWeights, hidden.map { it.genreIds }),
+                )
                 val context = RowContext(
                     prefs = prefs,
                     signals = signals,
+                    blockedIds = hidden.mapTo(HashSet()) { it.id },
+                    blockedNames = hidden.map { normalizeAiTitle(it.name) }.filterTo(HashSet()) { it.isNotEmpty() },
                     language = language,
                     page = 1 + refreshNonce % 3,
                     force = force,
@@ -250,11 +316,11 @@ object NativeRecommendationsRepository {
                     today = isoDate(Clock.System.now().toEpochMilliseconds()),
                     gate = Semaphore(5),
                 )
-                val sections = coroutineScope {
+                val built = coroutineScope {
                     snapshot.enabledRows.sortedBy { it.ordinal }.map { row ->
                         async {
                             try {
-                                buildSection(row, context)
+                                buildRow(row, context)
                             } catch (cancel: CancellationException) {
                                 throw cancel
                             } catch (error: Throwable) {
@@ -263,8 +329,14 @@ object NativeRecommendationsRepository {
                         }
                     }.awaitAll().filterNotNull()
                 }
+                // Rows are in on-screen order; earlier rows keep their titles, later ones backfill.
+                val deduped = NativeRanking.dedupeAcrossRows(built.map { it.items }, { it.id }, ROW_LIMIT, MIN_ROW_ITEMS)
+                val sections = built.zip(deduped).mapNotNull { (row, items) ->
+                    if (items.isEmpty()) null else toSection(row.row, items, context)
+                }
+                shownGenres = built.fold(HashMap<String, List<Int>>()) { acc, row -> acc.also { it.putAll(row.genres) } }
                 _uiState.value = _uiState.value.copy(
-                    sections = sections,
+                    sections = sections.withoutHiddenTitles(),
                     isLoading = false,
                     learnedFromHistory = signals.hasHistory,
                     lastUpdatedEpochMs = Clock.System.now().toEpochMilliseconds(),
@@ -285,6 +357,8 @@ object NativeRecommendationsRepository {
     private class RowContext(
         val prefs: NativeRecommendationPreferences,
         val signals: NativeTasteSignals,
+        val blockedIds: Set<String>,
+        val blockedNames: Set<String>,
         val language: String,
         val page: Int,
         val force: Boolean,
@@ -294,20 +368,30 @@ object NativeRecommendationsRepository {
         val gate: Semaphore,
     ) {
         val topGenres: List<Int> = NativeRanking.topGenres(signals.genreWeights, liked, disliked, 3)
-        val excludedNames: Set<String> = if (prefs.hideWatched) signals.watchedNames else emptySet()
+        val excludedNames: Set<String> =
+            (if (prefs.hideWatched) signals.watchedNames else emptySet()) + blockedNames
     }
 
-    private suspend fun buildSection(row: NativeRecommendationRow, ctx: RowContext): HomeCatalogSection? {
+    /** A row's picks before cross-row de-duplication, plus the genres of every pick. */
+    private class BuiltRow(
+        val row: NativeRecommendationRow,
+        val items: List<MetaPreview>,
+        val genres: Map<String, List<Int>>,
+    )
+
+    private suspend fun buildRow(row: NativeRecommendationRow, ctx: RowContext): BuiltRow? {
         val share = ctx.prefs.seriesPercent
         if (row.mediaOnly == TmdbEntityMediaType.TV && share == 0) return null
         if (row.mediaOnly == TmdbEntityMediaType.MOVIE && share == 100) return null
         if (row.kind == NativeRowKind.BecauseWatched && !ctx.signals.hasHistory) return null
         if (row.kind == NativeRowKind.Decades && ctx.prefs.decades.isEmpty()) return null
 
+        // Fetch a little more than the row shows so de-duplication against earlier rows can backfill.
+        val limit = ROW_LIMIT + ROW_RESERVE
         val (movieSlots, seriesSlots) = when (row.mediaOnly) {
-            TmdbEntityMediaType.MOVIE -> ROW_LIMIT to 0
-            TmdbEntityMediaType.TV -> 0 to ROW_LIMIT
-            null -> NativeRanking.split(ROW_LIMIT, share)
+            TmdbEntityMediaType.MOVIE -> limit to 0
+            TmdbEntityMediaType.TV -> 0 to limit
+            null -> NativeRanking.split(limit, share)
         }
         val (movies, series) = coroutineScope {
             val movieJob = async { if (movieSlots > 0) rankedFor(row, TmdbEntityMediaType.MOVIE, ctx) else emptyList() }
@@ -320,7 +404,7 @@ object NativeRecommendationsRepository {
         // Respect the ratio, but top up from whichever side has spare titles so rows never end short.
         var pickedMovies = movies.take(movieSlots)
         var pickedSeries = series.take(seriesSlots)
-        var missing = ROW_LIMIT - pickedMovies.size - pickedSeries.size
+        var missing = limit - pickedMovies.size - pickedSeries.size
         if (missing > 0) {
             val extraMovies = movies.drop(pickedMovies.size).take(missing)
             missing -= extraMovies.size
@@ -330,17 +414,43 @@ object NativeRecommendationsRepository {
         }
         val items: List<MetaPreview> = NativeRanking
             .interleave(pickedMovies.map { it.preview }, pickedSeries.map { it.preview })
-            .take(ROW_LIMIT)
+            .take(limit)
         if (items.isEmpty()) return null
+        val genres = (pickedMovies + pickedSeries).associate { it.preview.id to it.genreIds }
+        return BuiltRow(row, items, genres)
+    }
+
+    /** Re-applies hidden titles, in case one was hidden while this refresh was still running. */
+    private fun List<HomeCatalogSection>.withoutHiddenTitles(): List<HomeCatalogSection> {
+        val hiddenIds = notInterested.mapTo(HashSet()) { it.id }
+        if (hiddenIds.isEmpty()) return this
+        return map { section ->
+            val remaining = section.items.filterNot { it.id in hiddenIds }
+            section.copy(items = remaining, availableItemCount = remaining.size)
+        }
+    }
+
+    private fun toSection(row: NativeRecommendationRow, items: List<MetaPreview>, ctx: RowContext): HomeCatalogSection {
+        val seed = if (row.kind == NativeRowKind.BecauseWatched) leadingSeed(items, ctx) else null
         return HomeCatalogSection(
             key = "native_${row.key}",
-            title = row.title,
-            subtitle = row.subtitle,
+            title = seed?.let { "Because you watched ${it.title.name}" } ?: row.title,
+            subtitle = if (seed != null) "People who watched it also watched these" else row.subtitle,
             addonName = "TMDB",
             target = CatalogTarget.Addon("", (row.mediaOnly ?: TmdbEntityMediaType.MOVIE).value, row.key),
             items = items,
             availableItemCount = items.size,
         )
+    }
+
+    /** The watched title whose TMDB recommendations account for most of the shown row, if any. */
+    private fun leadingSeed(items: List<MetaPreview>, ctx: RowContext): TasteSeed? {
+        val shown = items.mapTo(HashSet()) { it.id }
+        return ctx.signals.seeds
+            .map { seed -> seed to seed.recommendations.count { it.preview.id in shown } * seed.weight }
+            .filter { it.second > 0.0 }
+            .maxByOrNull { it.second }
+            ?.first
     }
 
     private suspend fun dropMatureSeries(
@@ -371,7 +481,11 @@ object NativeRecommendationsRepository {
             ctx.excludedNames + ctx.signals.seeds.map { normalizeAiTitle(it.title.name) }
         } else ctx.excludedNames
 
-        fun rank(pool: List<NativeDiscoverCandidate>) = NativeRanking.rank(pool, weights, ctx.liked, ctx.disliked, excluded)
+        // Titles TMDB recommends for several of the viewer's seeds get a boost (BecauseWatched only).
+        var boosts: Map<String, Double> = emptyMap()
+
+        fun rank(pool: List<NativeDiscoverCandidate>) =
+            NativeRanking.rank(pool, weights, ctx.liked, ctx.disliked, excluded, ctx.blockedIds, boosts)
 
         val pool: List<NativeDiscoverCandidate> = when (row.kind) {
             NativeRowKind.ForYou -> {
@@ -385,10 +499,20 @@ object NativeRecommendationsRepository {
                 if (pools.isEmpty()) pools += fetchAll(media, ctx, null, false, emptyMap())
                 pools.flatten()
             }
-            NativeRowKind.BecauseWatched ->
-                ctx.signals.seeds.filter { it.keywordIds.isNotEmpty() }.take(3).flatMap { seed ->
-                    fetchAll(media, ctx, null, false, mapOf("with_keywords" to seed.keywordIds.take(4).joinToString("|")))
+            NativeRowKind.BecauseWatched -> {
+                // TMDB's own "viewers also watched" lists are the main source; keyword Discover only
+                // tops the row up when they come back thin (or a seed has no TMDB id).
+                val wanted = if (media == TmdbEntityMediaType.MOVIE) "movie" else "series"
+                val pools = ctx.signals.seeds.map { seed -> seed.weight to seed.recommendations.filter { it.preview.type == wanted } }
+                boosts = NativeRanking.coOccurrenceBoosts(pools)
+                val recommended = pools.flatMap { it.second }
+                val keywordPool = if (recommended.distinctBy { it.preview.id }.size >= ROW_LIMIT) emptyList() else {
+                    ctx.signals.seeds.filter { it.keywordIds.isNotEmpty() }.take(3).flatMap { seed ->
+                        fetchAll(media, ctx, null, false, mapOf("with_keywords" to seed.keywordIds.take(4).joinToString("|")))
+                    }
                 }
+                recommended + keywordPool
+            }
             NativeRowKind.HiddenGems -> {
                 val genres = genreList(media, ctx.topGenres)
                 fetchAll(media, ctx, listOf("hidden"), false, if (genres.isEmpty()) emptyMap() else mapOf("with_genres" to genres.joinToString("|")))
@@ -423,7 +547,13 @@ object NativeRecommendationsRepository {
                 else fetchAll(media, ctx, null, false, mapOf("with_genres" to ids.joinToString(",")))
             }
         }
-        return rank(pool)
+        // Re-order the head of the row so it is not ten near copies of one genre mix or franchise.
+        val ranked = rank(pool)
+        return NativeRanking.diversify(
+            ranked = ranked,
+            scoreOf = { NativeRanking.score(it, weights, ctx.liked) + (boosts[it.preview.id] ?: 0.0) },
+            count = ROW_LIMIT + ROW_RESERVE,
+        )
     }
 
     /** Movie genre ids -> ids valid for [media]; TV drops genres it has no equivalent for. */

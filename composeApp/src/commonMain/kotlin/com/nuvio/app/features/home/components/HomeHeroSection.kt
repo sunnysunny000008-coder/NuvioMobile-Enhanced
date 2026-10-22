@@ -65,6 +65,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,6 +80,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
@@ -188,6 +190,14 @@ internal val COVERFLOW_POSTER_BOTTOM_GAP = 20.dp
 internal val COVERFLOW_DOTS_HEIGHT = 44.dp
 private val COVERFLOW_POSTER_CORNER_RADIUS = 24.dp
 
+// Stacked deck: a larger top card, with the cards behind it peeking out underneath.
+private const val DECK_PORTRAIT_WIDTH_FRACTION = 0.72f
+private const val DECK_SCALE_STEP = 0.06f
+private const val DECK_MAX_DEPTH = 2.4f
+private const val DECK_EXIT_TILT_DEGREES = 10f
+private val DECK_STEP = 16.dp
+private val DECK_EXTRA_BOTTOM_GAP = 36.dp
+
 // Wide (landscape / tablet): backdrop cards with the logo and dots underneath.
 private const val COVERFLOW_WIDE_WIDTH_FRACTION = 0.6f
 private const val COVERFLOW_WIDE_ASPECT = 16f / 9f
@@ -215,26 +225,30 @@ internal data class CoverflowMetrics(
  * Wide: backdrop cards sized to fit the viewport height, then the logo and dots.
  */
 internal fun coverflowMetrics(
+    heroStyle: HomeHeroStyle,
     maxWidth: Dp,
     viewportHeight: Dp?,
     statusBarTopPadding: Dp,
     isTablet: Boolean,
 ): CoverflowMetrics {
+    val isDeck = heroStyle == HomeHeroStyle.STACKED_DECK
+    val extraBottomGap = if (isDeck) DECK_EXTRA_BOTTOM_GAP else 0.dp
     if (!heroUsesWideArtwork(maxWidth, viewportHeight, isTablet)) {
-        val posterWidth = maxWidth * COVERFLOW_POSTER_WIDTH_FRACTION
+        val posterWidth = maxWidth *
+            if (isDeck) DECK_PORTRAIT_WIDTH_FRACTION else COVERFLOW_POSTER_WIDTH_FRACTION
         return CoverflowMetrics(
             wide = false,
             cardWidth = posterWidth,
             cardHeight = posterWidth * TMDB_POSTER_HEIGHT_RATIO,
             topGap = COVERFLOW_TOP_GAP,
-            bottomGap = COVERFLOW_POSTER_BOTTOM_GAP,
+            bottomGap = COVERFLOW_POSTER_BOTTOM_GAP + extraBottomGap,
             infoHeight = COVERFLOW_DOTS_HEIGHT,
         )
     }
     var cardWidth = maxWidth * COVERFLOW_WIDE_WIDTH_FRACTION
     if (viewportHeight != null) {
         val chrome = statusBarTopPadding + COVERFLOW_WIDE_TOP_GAP + COVERFLOW_WIDE_BOTTOM_GAP +
-            COVERFLOW_WIDE_INFO_HEIGHT + COVERFLOW_WIDE_NAV_RESERVE
+            extraBottomGap + COVERFLOW_WIDE_INFO_HEIGHT + COVERFLOW_WIDE_NAV_RESERVE
         val maxCardHeight = maxOf(viewportHeight - chrome, 120.dp)
         cardWidth = minOf(cardWidth, maxCardHeight * COVERFLOW_WIDE_ASPECT)
     }
@@ -243,18 +257,19 @@ internal fun coverflowMetrics(
         cardWidth = cardWidth,
         cardHeight = cardWidth / COVERFLOW_WIDE_ASPECT,
         topGap = COVERFLOW_WIDE_TOP_GAP,
-        bottomGap = COVERFLOW_WIDE_BOTTOM_GAP,
+        bottomGap = COVERFLOW_WIDE_BOTTOM_GAP + extraBottomGap,
         infoHeight = COVERFLOW_WIDE_INFO_HEIGHT,
     )
 }
 
-/** Full-bleed coverflow hero height. */
+/** Full-bleed poster-stack hero height (Coverflow and Stacked Deck). */
 internal fun coverflowHeroHeight(
+    heroStyle: HomeHeroStyle,
     maxWidth: Dp,
     statusBarTopPadding: Dp,
     viewportHeight: Dp?,
     isTablet: Boolean,
-): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet)
+): Dp = coverflowMetrics(heroStyle, maxWidth, viewportHeight, statusBarTopPadding, isTablet)
     .heroHeight(statusBarTopPadding)
 
 internal fun cardHeroHeight(
@@ -465,7 +480,6 @@ internal fun HomeHeroSection(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
-    showExtendedInfo: Boolean = true,
     listState: LazyListState? = null,
     stretchPx: () -> Float = { 0f },
     trailerPlaybackEnabled: Boolean = false,
@@ -494,6 +508,7 @@ internal fun HomeHeroSection(
     val autoScrollPage = pagerState.settledPage
     val effectiveTrailerPlaybackEnabled = trailerPlaybackEnabled &&
         heroStyle != HomeHeroStyle.COVERFLOW &&
+        heroStyle != HomeHeroStyle.STACKED_DECK &&
         AppFeaturePolicy.heroTrailerPlaybackSupported &&
         AppFeaturePolicy.trailerPlaybackMode == TrailerPlaybackMode.IN_APP &&
         !MiniPlayerController.isActive
@@ -520,22 +535,25 @@ internal fun HomeHeroSection(
         pagerState.animateScrollToPage(nextPage)
     }
 
-    val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.PEEK
-    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW
-    val isPeekStyle = heroStyle == HomeHeroStyle.PEEK
+    val isCardStyle = heroStyle == HomeHeroStyle.CARD ||
+        heroStyle == HomeHeroStyle.COVERFLOW ||
+        heroStyle == HomeHeroStyle.STACKED_DECK
+    // Coverflow and Stacked Deck share one layout: full-bleed tinted backdrop, a card stack, then the info panel.
+    val isPosterStackStyle = heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
+    val isDeckStyle = heroStyle == HomeHeroStyle.STACKED_DECK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val cardInsetModifier = if (isCardStyle && !isCoverflowStyle) {
+    val cardInsetModifier = if (isCardStyle && !isPosterStackStyle) {
         Modifier.padding(
             top = statusBarTopPadding + HERO_CARD_TOP_PADDING,
-            start = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
-            end = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
+            start = HERO_CARD_HORIZONTAL_PADDING,
+            end = HERO_CARD_HORIZONTAL_PADDING,
         )
     } else {
         Modifier
     }
     val heroShape = when {
-        isCoverflowStyle -> RectangleShape
+        isPosterStackStyle -> RectangleShape
         isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
         isNetflixStyle -> RectangleShape
         else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
@@ -572,13 +590,14 @@ internal fun HomeHeroSection(
                 null
             }
             val coverflowLayout = coverflowMetrics(
+                heroStyle = heroStyle,
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,
                 statusBarTopPadding = statusBarTopPadding,
                 isTablet = baseLayout.isTablet,
             )
             val layout = when {
-                isCoverflowStyle -> baseLayout.copy(
+                isPosterStackStyle -> baseLayout.copy(
                     heroHeight = coverflowLayout.heroHeight(statusBarTopPadding),
                 )
                 isCardStyle -> baseLayout.copy(
@@ -598,7 +617,7 @@ internal fun HomeHeroSection(
                 // Always the backdrop: posters have the title printed on them, which doubles up with our logo.
                 netflixLayout != null -> HomeHeroArtworkSource.BACKDROP
                 !isCardStyle -> HomeHeroArtworkSource.BACKDROP
-                isCoverflowStyle ->
+                isPosterStackStyle ->
                     if (coverflowLayout.wide) HomeHeroArtworkSource.BACKDROP else HomeHeroArtworkSource.POSTER
                 heroUsesWideArtwork(maxWidth, viewportHeight, baseLayout.isTablet) ->
                     HomeHeroArtworkSource.BACKDROP
@@ -747,7 +766,7 @@ internal fun HomeHeroSection(
                     ) {
                         // Coverflow uses a narrow poster stack over a softly tinted backdrop;
                         // Peek uses wide cards with the adjacent card visible at the edge.
-                        if (isCoverflowStyle) {
+                        if (isPosterStackStyle) {
                             val heroFadeColorState = LocalDynamicArtworkBackgroundColor.current
                             val themeBackground = MaterialTheme.colorScheme.background
                             Box(
@@ -764,29 +783,33 @@ internal fun HomeHeroSection(
                                         )
                                     },
                             )
-                            CoverflowPosterStack(
-                                layers = visiblePages,
-                                items = items,
-                                pagerState = pagerState,
-                                metrics = coverflowLayout,
-                                topPadding = statusBarTopPadding + coverflowLayout.topGap,
-                            )
+                            if (isDeckStyle) {
+                                StackedDeckCards(
+                                    items = items,
+                                    pagerState = pagerState,
+                                    metrics = coverflowLayout,
+                                    topPadding = statusBarTopPadding + coverflowLayout.topGap,
+                                )
+                            } else {
+                                CoverflowPosterStack(
+                                    layers = visiblePages,
+                                    items = items,
+                                    pagerState = pagerState,
+                                    metrics = coverflowLayout,
+                                    topPadding = statusBarTopPadding + coverflowLayout.topGap,
+                                )
+                            }
                         } else {
                         visiblePages.forEach { layer ->
                             val item = items[layer.itemIndex]
                             val artworkUrl = heroArtworkUrl(item, effectiveArtworkSource)
                             val isCurrentLayer = layer.page == currentPage
-                            val artworkWidthFraction = when {
-                                isCoverflowStyle -> 0.62f
-                                isPeekStyle -> 0.82f
-                                else -> 1f
-                            }
                             key(effectiveArtworkSource, item.type, item.id, artworkUrl) {
                                 AsyncImage(
                                     model = artworkUrl,
                                     contentDescription = item.name,
                                     modifier = Modifier
-                                        .fillMaxWidth(artworkWidthFraction)
+                                        .fillMaxWidth()
                                         .fillMaxHeight()
                                         .align(Alignment.Center)
                                         .graphicsLayer {
@@ -797,11 +820,7 @@ internal fun HomeHeroSection(
                                                 visibility > 0f -> 1f
                                                 else -> 0f
                                             }
-                                            translationX = when {
-                                                isCoverflowStyle -> -offset * heroWidthPx * 0.68f
-                                                isPeekStyle -> -offset * heroWidthPx * 0.72f
-                                                else -> -offset * heroWidthPx * artworkParallax
-                                            }
+                                            translationX = -offset * heroWidthPx * artworkParallax
                                             translationY = if (isCardStyle) 0f else heroBackgroundScrollTranslationY(scrollOffsetPx)
                                             scaleX = artworkBaseScale *
                                                 if (isCardStyle) 1f else heroBackgroundScrollScale(scrollOffsetPx)
@@ -965,7 +984,6 @@ internal fun HomeHeroSection(
                                                 item = layerItem,
                                                 layout = layout,
                                                 onItemClick = onItemClick,
-                                                showExtendedInfo = showExtendedInfo,
                                                 startAligned = true,
                                                 contentColor = Color.White,
                                                 logoWidth = netflixLayout.logoWidth,
@@ -1042,7 +1060,7 @@ internal fun HomeHeroSection(
                                     onItemClick?.invoke(currentItem)
                                 },
                         )
-                        if (isCoverflowStyle) {
+                        if (isPosterStackStyle) {
                             CoverflowInfoPanel(
                                 layers = visiblePages,
                                 items = items,
@@ -1093,7 +1111,6 @@ internal fun HomeHeroSection(
                                             item = layerItem,
                                             layout = layout,
                                             onItemClick = onItemClick,
-                                            showExtendedInfo = showExtendedInfo,
                                         )
                                     }
                                     }
@@ -1142,7 +1159,7 @@ internal fun HomeHeroSection(
             }
         }
 
-        if (isCardStyle && !isCoverflowStyle && items.size > 1) {
+        if (isCardStyle && !isPosterStackStyle && items.size > 1) {
             Spacer(modifier = Modifier.height(12.dp))
             HeroPageIndicator(
                 itemCount = items.size,
@@ -1224,21 +1241,20 @@ internal fun HomeHeroReservedSpace(
 ) {
     val isCardStyle = heroStyle == HomeHeroStyle.CARD ||
         heroStyle == HomeHeroStyle.COVERFLOW ||
-        heroStyle == HomeHeroStyle.PEEK
-    val isPeekStyle = heroStyle == HomeHeroStyle.PEEK
+        heroStyle == HomeHeroStyle.STACKED_DECK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
-    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW
+    val isPosterStackStyle = heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (isCardStyle && !isCoverflowStyle) {
+                if (isCardStyle && !isPosterStackStyle) {
                     Modifier.padding(
                         top = statusBarTopPadding + HERO_CARD_TOP_PADDING,
-                        start = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
-                        end = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
+                        start = HERO_CARD_HORIZONTAL_PADDING,
+                        end = HERO_CARD_HORIZONTAL_PADDING,
                     )
                 } else {
                     Modifier
@@ -1246,7 +1262,7 @@ internal fun HomeHeroReservedSpace(
             )
             .clip(
                 when {
-                    isCoverflowStyle -> RectangleShape
+                    isPosterStackStyle -> RectangleShape
                     isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
                     isNetflixStyle -> RectangleShape
                     else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
@@ -1259,7 +1275,7 @@ internal fun HomeHeroReservedSpace(
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
         val heroHeight = when {
-            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet)
+            isPosterStackStyle -> coverflowHeroHeight(heroStyle, maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet)
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,
@@ -1286,7 +1302,6 @@ internal fun HomeHeroReservedSpace(
 private fun HeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
-    showExtendedInfo: Boolean = true,
     onItemClick: ((MetaPreview) -> Unit)?,
     startAligned: Boolean = layout.isTablet,
     contentColor: Color = MaterialTheme.colorScheme.onBackground,
@@ -1371,7 +1386,6 @@ private fun HeroContentBlock(
         }
         val textAlign = if (startAligned) TextAlign.Start else TextAlign.Center
 
-        if (showExtendedInfo) {
         Spacer(modifier = Modifier.height(14.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1423,8 +1437,6 @@ private fun HeroContentBlock(
                 maxLines = synopsisMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-
         }
 
         if (actions != null) {
@@ -1862,6 +1874,78 @@ private fun CoverflowPosterStack(
                             cameraDistance = 12f * density
                             alpha = (2f - distance).coerceIn(0f, 1f)
                             shape = posterShape
+                            clip = true
+                        },
+                    contentScale = ContentScale.Crop,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A deck of cards: the top card sits in front, the next two peek out beneath it, and swiping
+ * throws the top card off to the side so the one behind rises into place.
+ */
+@Composable
+private fun StackedDeckCards(
+    items: List<MetaPreview>,
+    pagerState: PagerState,
+    metrics: CoverflowMetrics,
+    topPadding: Dp,
+) {
+    val cardShape = RoundedCornerShape(COVERFLOW_POSTER_CORNER_RADIUS)
+    val currentPage = pagerState.currentPage
+    // One card on its way out, the top card, and two waiting behind it.
+    val layers = remember(currentPage, pagerState.pageCount, items.size) {
+        ((currentPage - 1)..(currentPage + 2))
+            .filter { it in 0 until pagerState.pageCount }
+            .map { page -> HeroPageLayer(page = page, itemIndex = page % items.size) }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        layers.forEach { layer ->
+            val item = items[layer.itemIndex]
+            val artworkUrl = if (metrics.wide) {
+                item.banner ?: item.landscapePoster ?: item.poster
+            } else {
+                item.poster ?: item.banner
+            }
+            key(item.type, item.id, layer.page, metrics.wide) {
+                AsyncImage(
+                    model = artworkUrl,
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = topPadding)
+                        .width(metrics.cardWidth)
+                        .height(metrics.cardHeight)
+                        // Whole pages only, so this does not recompose while a swipe is in progress.
+                        .zIndex((currentPage - layer.page).toFloat())
+                        .graphicsLayer {
+                            // 0 = top card, 1 = first card behind it, -1 = the card that was just thrown off.
+                            val position = (layer.page - pagerState.currentPage) -
+                                pagerState.currentPageOffsetFraction
+                            // Scale and tilt from the bottom edge so the cards behind keep a sliver showing.
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                            if (position < 0f) {
+                                val exit = position.coerceIn(-1f, 0f)
+                                translationX = exit * size.width * 1.15f
+                                rotationZ = exit * DECK_EXIT_TILT_DEGREES
+                                alpha = (1f + exit * 1.6f).coerceIn(0f, 1f)
+                            } else {
+                                val depth = position.coerceIn(0f, DECK_MAX_DEPTH)
+                                val scale = 1f - DECK_SCALE_STEP * depth
+                                scaleX = scale
+                                scaleY = scale
+                                translationY = depth * DECK_STEP.toPx()
+                                alpha = if (depth <= 2f) {
+                                    1f - 0.2f * depth
+                                } else {
+                                    0.6f * ((DECK_MAX_DEPTH - depth) / (DECK_MAX_DEPTH - 2f)).coerceIn(0f, 1f)
+                                }
+                            }
+                            shape = cardShape
                             clip = true
                         },
                     contentScale = ContentScale.Crop,

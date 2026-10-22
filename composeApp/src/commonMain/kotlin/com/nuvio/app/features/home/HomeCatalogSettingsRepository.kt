@@ -104,7 +104,7 @@ internal enum class HomeHeroStyle(
     CARD("card"),
     NETFLIX("netflix"),
     COVERFLOW("coverflow"),
-    PEEK("peek"),
+    STACKED_DECK("stacked_deck"),
     ;
 
     companion object {

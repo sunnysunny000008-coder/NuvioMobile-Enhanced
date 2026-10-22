@@ -296,10 +296,10 @@ private fun HeroStyleOptions(
             )
             HeroStyleOption(
                 modifier = Modifier.fillMaxWidth(),
-                style = HomeHeroStyle.PEEK,
+                style = HomeHeroStyle.STACKED_DECK,
                 selectedStyle = selectedStyle,
-                title = "Peek Carousel",
-                description = "Rounded, near-full-width cards with the next card peeking in.",
+                title = "Stacked Deck",
+                description = "Centered card with the next cards stacked behind it. Posters in portrait, backdrops with the title in landscape.",
             )
         }
     }

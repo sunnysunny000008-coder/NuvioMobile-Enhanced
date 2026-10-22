@@ -73,9 +73,9 @@ internal fun HomeSkeletonHero(
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
 ) {
     val brush = rememberHomeSkeletonBrush()
-    val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.PEEK
+    val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
-    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW
+    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.STACKED_DECK
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     BoxWithConstraints(

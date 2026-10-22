@@ -75,13 +75,14 @@ internal fun HomeSkeletonHero(
     val brush = rememberHomeSkeletonBrush()
     val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.PEEK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
+    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (isCardStyle) {
+                if (isCardStyle && !isCoverflowStyle) {
                     Modifier.padding(
                         top = statusBarTopPadding + HERO_CARD_TOP_PADDING,
                         start = HERO_CARD_HORIZONTAL_PADDING,
@@ -93,6 +94,7 @@ internal fun HomeSkeletonHero(
             )
             .clip(
                 when {
+                    isCoverflowStyle -> RectangleShape
                     isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
                     isNetflixStyle -> RectangleShape
                     else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
@@ -106,6 +108,7 @@ internal fun HomeSkeletonHero(
         )
         val containerWidth = maxWidth
         val heroHeight = when {
+            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding)
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,

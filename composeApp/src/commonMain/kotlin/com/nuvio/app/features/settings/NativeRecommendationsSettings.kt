@@ -142,6 +142,14 @@ internal fun LazyListScope.nativeRecommendationsSettingsContent(isTablet: Boolea
                             onCheckedChange = { checked -> NativeRecommendationsRepository.updatePreferences { it.copy(hideWatched = checked) } },
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.native_rec_shuffle_titles),
+                            description = stringResource(Res.string.native_rec_shuffle_titles_desc),
+                            checked = prefs.shuffleTitles,
+                            isTablet = isTablet,
+                            onCheckedChange = { checked -> NativeRecommendationsRepository.updatePreferences { it.copy(shuffleTitles = checked) } },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                         val genreOptions = TasteGenres.map { (id, label) -> id to stringResource(label) }
                         NativeMultiChoice(
                             title = stringResource(Res.string.native_rec_liked_genres),

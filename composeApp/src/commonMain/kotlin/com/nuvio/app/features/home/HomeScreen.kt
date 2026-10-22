@@ -1362,7 +1362,11 @@ fun HomeScreen(
                                                 entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                                 modifier = Modifier.padding(bottom = 12.dp),
                                                 sectionPadding = homeSectionPadding,
-                                                onViewAllClick = null,
+                                                onViewAllClick = if (displaySection.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
+                                                    onCatalogClick?.let { { it(displaySection) } }
+                                                } else {
+                                                    null
+                                                },
                                                 watchedKeys = watchedUiState.watchedKeys,
                                                 fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                                                 onPosterClick = onPosterClick,

@@ -581,8 +581,16 @@ object HomeCatalogSettingsRepository {
             )
         }
 
-        val nativeEnabled = runCatching { NativeRecommendationsRepository.ensureLoaded(); NativeRecommendationsRepository.uiState.value.enabled }.getOrDefault(false)
-        val nativeItems = if (nativeEnabled) NativeRecommendationRow.values().mapIndexed { index, row ->
+        val nativeState = runCatching {
+            NativeRecommendationsRepository.ensureLoaded()
+            NativeRecommendationsRepository.uiState.value
+        }.getOrNull()
+        // Only the TMDB rows the viewer has switched on appear in the chooser; with TMDB
+        // recommendations turned off, none of them do.
+        val nativeRows = if (nativeState?.enabled == true) {
+            NativeRecommendationRow.values().filter { it in nativeState.enabledRows }
+        } else emptyList()
+        val nativeItems = nativeRows.mapIndexed { index, row ->
             val key = row.catalogKey
             val preference = preferences[key]
             HomeCatalogSettingsItem(
@@ -595,7 +603,7 @@ object HomeCatalogSettingsRepository {
                 order = preference?.order ?: (catalogItems.size + collectionItems.size + index),
                 rowShape = HomeRowShapeMode.fromStorageValue(preference?.rowShape),
             )
-        } else emptyList()
+        }
         val items = (catalogItems + collectionItems + nativeItems)
             .sortedBy { it.order }
 

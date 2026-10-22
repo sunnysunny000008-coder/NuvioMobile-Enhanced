@@ -2923,6 +2923,8 @@
     <string name="native_rec_learn_waiting">Watch a few titles and your taste will start shaping these rows.</string>
     <string name="native_rec_hide_watched">Hide titles I have watched</string>
     <string name="native_rec_hide_watched_desc">Never recommend something that is already in your watch history.</string>
+    <string name="native_rec_shuffle_titles">Shuffle titles on app start</string>
+    <string name="native_rec_shuffle_titles_desc">Mixes the order of titles inside each TMDB row. A new order is picked every time the app starts.</string>
     <string name="native_rec_liked_genres">Genres I like</string>
     <string name="native_rec_liked_genres_desc">These genres are boosted in every row.</string>
     <string name="native_rec_disliked_genres">Genres I avoid</string>

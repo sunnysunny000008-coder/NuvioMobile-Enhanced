@@ -2,6 +2,7 @@ package com.nuvio.app.features.catalog
 
 import com.nuvio.app.core.poster.CustomPosterUrlRepository
 import com.nuvio.app.core.poster.withCustomPosterUrls
+import com.nuvio.app.features.ai.NativeRecommendationsRepository
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.simkl.SimklRelatedRepository
@@ -170,6 +171,8 @@ object CatalogRepository {
 
                     is CatalogTarget.Server -> ServerCatalog.page(target, skip = requestedSkip)
 
+                    is CatalogTarget.TmdbRecommendations -> tmdbRecommendationsPage(target)
+
                     is CatalogTarget.Library -> error(getString(Res.string.catalog_load_failed))
                 }.withUnreleasedFilter(request.hideUnreleasedContent)
             }.fold(
@@ -249,6 +252,15 @@ private suspend fun fetchCollectionSourcePage(
         source.isTrakt -> TraktPublicListSourceResolver.resolve(source = source, page = page)
         else -> error(getString(Res.string.catalog_load_failed))
     }
+}
+
+/** A TMDB recommendation row opens with the titles it already holds, all on one page. */
+private fun tmdbRecommendationsPage(target: CatalogTarget.TmdbRecommendations): CatalogPage {
+    val items = NativeRecommendationsRepository.uiState.value.sections
+        .firstOrNull { it.key == "native_${target.rowKey}" }
+        ?.items
+        .orEmpty()
+    return CatalogPage(items = items, rawItemCount = items.size, nextSkip = null)
 }
 
 private suspend fun fetchMoreLikeThisCatalogPage(

@@ -42,6 +42,14 @@ sealed interface CatalogTarget {
         override val supportsPagination: Boolean = true
     }
 
+    /** One of the TMDB recommendation rows; opens every title that row currently holds. */
+    data class TmdbRecommendations(
+        val rowKey: String,
+        override val contentType: String,
+    ) : CatalogTarget {
+        override val supportsPagination: Boolean = false
+    }
+
     data class CollectionSource(
         val collectionId: String,
         val folderId: String,

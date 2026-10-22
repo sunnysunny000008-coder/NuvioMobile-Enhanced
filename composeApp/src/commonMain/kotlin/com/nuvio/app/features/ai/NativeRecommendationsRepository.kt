@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlin.random.Random
 import kotlin.time.Clock
 
 /** How a native row picks its titles. */
@@ -80,6 +81,8 @@ data class NativeRecommendationPreferences(
     val learnFromHistory: Boolean = true,
     /** Decade start years used by the "Through the decades" row, e.g. 1980. */
     val decades: Set<Int> = setOf(1980, 1990, 2000, 2010),
+    /** Shuffles the titles inside each TMDB row. The order is picked once per app start. */
+    val shuffleTitles: Boolean = false,
 )
 
 val NATIVE_DECADE_OPTIONS: List<Int> = listOf(1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020)
@@ -112,6 +115,10 @@ object NativeRecommendationsRepository {
     private const val KEY_HIDE_WATCHED = "native_hide_watched"
     private const val KEY_LEARN = "native_learn_history"
     private const val KEY_DECADES = "native_decades"
+    private const val KEY_SHUFFLE_TITLES = "native_shuffle_titles"
+
+    /** Fixed for this app run, so the shuffled order holds until the next app start. */
+    private val launchShuffleSeed: Long = Random.nextLong()
     private const val KEY_NOT_INTERESTED = "native_not_interested"
 
     private const val ROW_LIMIT = 20
@@ -218,8 +225,16 @@ object NativeRecommendationsRepository {
             hideWatched = AiSettingsStorage.load(KEY_HIDE_WATCHED)?.toBooleanStrictOrNull() ?: defaults.hideWatched,
             learnFromHistory = AiSettingsStorage.load(KEY_LEARN)?.toBooleanStrictOrNull() ?: defaults.learnFromHistory,
             decades = AiSettingsStorage.load(KEY_DECADES)?.let { stored -> ints(KEY_DECADES).takeIf { stored.isNotBlank() } } ?: defaults.decades,
+            shuffleTitles = AiSettingsStorage.load(KEY_SHUFFLE_TITLES)?.toBooleanStrictOrNull() ?: defaults.shuffleTitles,
         )
     }
+
+    /**
+     * Keeps the recommender's order unless the viewer asked for shuffled titles. The shuffle uses
+     * a seed fixed at app start, so each row keeps one order until the app is restarted.
+     */
+    private fun <T> orderTitles(row: NativeRecommendationRow, items: List<T>, shuffle: Boolean): List<T> =
+        if (shuffle) items.shuffled(Random(launchShuffleSeed + row.ordinal)) else items
 
     /** Comma separated choices; the old single-choice value "any" means no restriction. */
     private fun words(raw: String): Set<String> =
@@ -237,6 +252,7 @@ object NativeRecommendationsRepository {
         AiSettingsStorage.save(KEY_HIDE_WATCHED, value.hideWatched.toString())
         AiSettingsStorage.save(KEY_LEARN, value.learnFromHistory.toString())
         AiSettingsStorage.save(KEY_DECADES, value.decades.sorted().joinToString(","))
+        AiSettingsStorage.save(KEY_SHUFFLE_TITLES, value.shuffleTitles.toString())
     }
 
     /** Saves immediately and refreshes shortly after, so a burst of taps causes one reload. */
@@ -332,7 +348,7 @@ object NativeRecommendationsRepository {
                 // Rows are in on-screen order; earlier rows keep their titles, later ones backfill.
                 val deduped = NativeRanking.dedupeAcrossRows(built.map { it.items }, { it.id }, ROW_LIMIT, MIN_ROW_ITEMS)
                 val sections = built.zip(deduped).mapNotNull { (row, items) ->
-                    if (items.isEmpty()) null else toSection(row.row, items, context)
+                    if (items.isEmpty()) null else toSection(row.row, orderTitles(row.row, items, prefs.shuffleTitles), context)
                 }
                 shownGenres = built.fold(HashMap<String, List<Int>>()) { acc, row -> acc.also { it.putAll(row.genres) } }
                 _uiState.value = _uiState.value.copy(
@@ -437,7 +453,7 @@ object NativeRecommendationsRepository {
             title = seed?.let { "Because you watched ${it.title.name}" } ?: row.title,
             subtitle = if (seed != null) "People who watched it also watched these" else row.subtitle,
             addonName = "TMDB",
-            target = CatalogTarget.Addon("", (row.mediaOnly ?: TmdbEntityMediaType.MOVIE).value, row.key),
+            target = CatalogTarget.TmdbRecommendations(row.key, (row.mediaOnly ?: TmdbEntityMediaType.MOVIE).value),
             items = items,
             availableItemCount = items.size,
         )

@@ -178,23 +178,84 @@ internal fun heroUsesWideArtwork(
 ): Boolean = isTablet || (viewportHeight != null && maxWidth > viewportHeight)
 
 internal const val COVERFLOW_POSTER_WIDTH_FRACTION = 0.62f
-private const val COVERFLOW_SIDE_OFFSET_FRACTION = 0.50f
+/** Neighbour spacing, as a multiple of the centre card's width (0.5 of the screen at 0.62 poster width). */
+private const val COVERFLOW_SIDE_OFFSET_CARD_FRACTION = 0.5f / COVERFLOW_POSTER_WIDTH_FRACTION
 private const val COVERFLOW_SIDE_SCALE_DROP = 0.15f
 private const val COVERFLOW_SIDE_TILT_DEGREES = 28f
 internal val COVERFLOW_TOP_GAP = 24.dp
 internal val COVERFLOW_POSTER_BOTTOM_GAP = 20.dp
-internal val COVERFLOW_INFO_HEIGHT = 124.dp
+/** Portrait: nothing under the poster except the page dots. */
+internal val COVERFLOW_DOTS_HEIGHT = 44.dp
 private val COVERFLOW_POSTER_CORNER_RADIUS = 24.dp
 
-/** Full-bleed coverflow hero: poster stack, then title, meta row and page dots (no buttons). */
+// Wide (landscape / tablet): backdrop cards with the logo and dots underneath.
+private const val COVERFLOW_WIDE_WIDTH_FRACTION = 0.6f
+private const val COVERFLOW_WIDE_ASPECT = 16f / 9f
+private val COVERFLOW_WIDE_TOP_GAP = 12.dp
+private val COVERFLOW_WIDE_BOTTOM_GAP = 8.dp
+private val COVERFLOW_WIDE_LOGO_HEIGHT = 36.dp
+private val COVERFLOW_WIDE_INFO_HEIGHT = 80.dp
+/** Room kept free under the hero for the floating bottom navigation bar. */
+private val COVERFLOW_WIDE_NAV_RESERVE = 72.dp
+
+internal data class CoverflowMetrics(
+    val wide: Boolean,
+    val cardWidth: Dp,
+    val cardHeight: Dp,
+    val topGap: Dp,
+    val bottomGap: Dp,
+    val infoHeight: Dp,
+) {
+    fun heroHeight(statusBarTopPadding: Dp): Dp =
+        statusBarTopPadding + topGap + cardHeight + bottomGap + infoHeight
+}
+
+/**
+ * Portrait: poster stack, then only the page dots.
+ * Wide: backdrop cards sized to fit the viewport height, then the logo and dots.
+ */
+internal fun coverflowMetrics(
+    maxWidth: Dp,
+    viewportHeight: Dp?,
+    statusBarTopPadding: Dp,
+    isTablet: Boolean,
+): CoverflowMetrics {
+    if (!heroUsesWideArtwork(maxWidth, viewportHeight, isTablet)) {
+        val posterWidth = maxWidth * COVERFLOW_POSTER_WIDTH_FRACTION
+        return CoverflowMetrics(
+            wide = false,
+            cardWidth = posterWidth,
+            cardHeight = posterWidth * TMDB_POSTER_HEIGHT_RATIO,
+            topGap = COVERFLOW_TOP_GAP,
+            bottomGap = COVERFLOW_POSTER_BOTTOM_GAP,
+            infoHeight = COVERFLOW_DOTS_HEIGHT,
+        )
+    }
+    var cardWidth = maxWidth * COVERFLOW_WIDE_WIDTH_FRACTION
+    if (viewportHeight != null) {
+        val chrome = statusBarTopPadding + COVERFLOW_WIDE_TOP_GAP + COVERFLOW_WIDE_BOTTOM_GAP +
+            COVERFLOW_WIDE_INFO_HEIGHT + COVERFLOW_WIDE_NAV_RESERVE
+        val maxCardHeight = maxOf(viewportHeight - chrome, 120.dp)
+        cardWidth = minOf(cardWidth, maxCardHeight * COVERFLOW_WIDE_ASPECT)
+    }
+    return CoverflowMetrics(
+        wide = true,
+        cardWidth = cardWidth,
+        cardHeight = cardWidth / COVERFLOW_WIDE_ASPECT,
+        topGap = COVERFLOW_WIDE_TOP_GAP,
+        bottomGap = COVERFLOW_WIDE_BOTTOM_GAP,
+        infoHeight = COVERFLOW_WIDE_INFO_HEIGHT,
+    )
+}
+
+/** Full-bleed coverflow hero height. */
 internal fun coverflowHeroHeight(
     maxWidth: Dp,
     statusBarTopPadding: Dp,
-): Dp = statusBarTopPadding +
-    COVERFLOW_TOP_GAP +
-    (maxWidth * COVERFLOW_POSTER_WIDTH_FRACTION * TMDB_POSTER_HEIGHT_RATIO) +
-    COVERFLOW_POSTER_BOTTOM_GAP +
-    COVERFLOW_INFO_HEIGHT
+    viewportHeight: Dp?,
+    isTablet: Boolean,
+): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet)
+    .heroHeight(statusBarTopPadding)
 
 internal fun cardHeroHeight(
     maxWidth: Dp,
@@ -510,9 +571,15 @@ internal fun HomeHeroSection(
             } else {
                 null
             }
+            val coverflowLayout = coverflowMetrics(
+                maxWidth = maxWidth,
+                viewportHeight = viewportHeight,
+                statusBarTopPadding = statusBarTopPadding,
+                isTablet = baseLayout.isTablet,
+            )
             val layout = when {
                 isCoverflowStyle -> baseLayout.copy(
-                    heroHeight = coverflowHeroHeight(maxWidth, statusBarTopPadding),
+                    heroHeight = coverflowLayout.heroHeight(statusBarTopPadding),
                 )
                 isCardStyle -> baseLayout.copy(
                     heroHeight = cardHeroHeight(
@@ -531,7 +598,8 @@ internal fun HomeHeroSection(
                 // Always the backdrop: posters have the title printed on them, which doubles up with our logo.
                 netflixLayout != null -> HomeHeroArtworkSource.BACKDROP
                 !isCardStyle -> HomeHeroArtworkSource.BACKDROP
-                isCoverflowStyle -> HomeHeroArtworkSource.POSTER
+                isCoverflowStyle ->
+                    if (coverflowLayout.wide) HomeHeroArtworkSource.BACKDROP else HomeHeroArtworkSource.POSTER
                 heroUsesWideArtwork(maxWidth, viewportHeight, baseLayout.isTablet) ->
                     HomeHeroArtworkSource.BACKDROP
                 else -> HomeHeroArtworkSource.POSTER
@@ -700,8 +768,8 @@ internal fun HomeHeroSection(
                                 layers = visiblePages,
                                 items = items,
                                 pagerState = pagerState,
-                                heroWidth = heroWidthDp,
-                                topPadding = statusBarTopPadding + COVERFLOW_TOP_GAP,
+                                metrics = coverflowLayout,
+                                topPadding = statusBarTopPadding + coverflowLayout.topGap,
                             )
                         } else {
                         visiblePages.forEach { layer ->
@@ -981,6 +1049,7 @@ internal fun HomeHeroSection(
                                 pagerState = pagerState,
                                 coroutineScope = coroutineScope,
                                 heroWidthPx = heroWidthPx,
+                                metrics = coverflowLayout,
                                 onItemClick = onItemClick,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                             )
@@ -1190,7 +1259,7 @@ internal fun HomeHeroReservedSpace(
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
         val heroHeight = when {
-            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding)
+            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet)
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,
@@ -1749,32 +1818,35 @@ private fun resolveHeroTargetPage(
 }
 
 
-/** Centered poster with angled, slightly smaller neighbours peeking in from both edges. */
+/** Centered card with angled, slightly smaller neighbours peeking in from both edges. */
 @Composable
 private fun CoverflowPosterStack(
     layers: List<HeroPageLayer>,
     items: List<MetaPreview>,
     pagerState: PagerState,
-    heroWidth: Dp,
+    metrics: CoverflowMetrics,
     topPadding: Dp,
 ) {
-    val posterWidth = heroWidth * COVERFLOW_POSTER_WIDTH_FRACTION
-    val posterHeight = posterWidth * TMDB_POSTER_HEIGHT_RATIO
     val posterShape = RoundedCornerShape(COVERFLOW_POSTER_CORNER_RADIUS)
 
     Box(modifier = Modifier.fillMaxSize()) {
         layers.forEach { layer ->
             val item = items[layer.itemIndex]
-            val artworkUrl = item.poster ?: item.banner
-            key(item.type, item.id, layer.page) {
+            // Portrait shows the poster; wide layouts use the backdrop so no title is printed twice.
+            val artworkUrl = if (metrics.wide) {
+                item.banner ?: item.landscapePoster ?: item.poster
+            } else {
+                item.poster ?: item.banner
+            }
+            key(item.type, item.id, layer.page, metrics.wide) {
                 AsyncImage(
                     model = artworkUrl,
                     contentDescription = item.name,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = topPadding)
-                        .width(posterWidth)
-                        .height(posterHeight)
+                        .width(metrics.cardWidth)
+                        .height(metrics.cardHeight)
                         .graphicsLayer {
                             // position: 0 = centered, +1 = one slot to the right, -1 = one slot to the left.
                             val position = (layer.page - pagerState.currentPage) -
@@ -1782,7 +1854,7 @@ private fun CoverflowPosterStack(
                             val distance = abs(position)
                             val scale = 1f - COVERFLOW_SIDE_SCALE_DROP * distance.coerceAtMost(1f)
                             translationX = position.coerceIn(-2f, 2f) *
-                                heroWidth.toPx() * COVERFLOW_SIDE_OFFSET_FRACTION
+                                metrics.cardWidth.toPx() * COVERFLOW_SIDE_OFFSET_CARD_FRACTION
                             scaleX = scale
                             scaleY = scale
                             // Inner edge tilts away from the viewer. Flip the sign if it looks reversed.
@@ -1799,7 +1871,7 @@ private fun CoverflowPosterStack(
     }
 }
 
-/** Title, rating/year/genre row and page dots under the coverflow posters. No action buttons. */
+/** Portrait: page dots only. Wide: the title logo, then the page dots. No action buttons. */
 @Composable
 private fun CoverflowInfoPanel(
     layers: List<HeroPageLayer>,
@@ -1807,39 +1879,42 @@ private fun CoverflowInfoPanel(
     pagerState: PagerState,
     coroutineScope: CoroutineScope,
     heroWidthPx: Float,
+    metrics: CoverflowMetrics,
     onItemClick: ((MetaPreview) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(COVERFLOW_INFO_HEIGHT)
-            .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+            .height(metrics.infoHeight)
+            .padding(start = 20.dp, end = 20.dp, bottom = if (metrics.wide) 8.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            layers.forEach { layer ->
-                val item = items[layer.itemIndex]
-                key(item.type, item.id) {
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            val offset = heroPageOffset(pagerState, layer.page)
-                            val visibility = (1f - abs(offset)).coerceIn(0f, 1f)
-                            alpha = ((visibility - 0.5f) * 2f).coerceIn(0f, 1f)
-                            translationX = -offset * heroWidthPx * HERO_CONTENT_PARALLAX
-                        },
-                    ) {
-                        CoverflowItemInfo(item = item, onItemClick = onItemClick)
+        if (metrics.wide) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                layers.forEach { layer ->
+                    val item = items[layer.itemIndex]
+                    key(item.type, item.id) {
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                val offset = heroPageOffset(pagerState, layer.page)
+                                val visibility = (1f - abs(offset)).coerceIn(0f, 1f)
+                                alpha = ((visibility - 0.5f) * 2f).coerceIn(0f, 1f)
+                                translationX = -offset * heroWidthPx * HERO_CONTENT_PARALLAX
+                            },
+                        ) {
+                            CoverflowItemLogo(item = item, onItemClick = onItemClick)
+                        }
                     }
                 }
             }
+            if (items.size > 1) Spacer(modifier = Modifier.height(8.dp))
         }
         if (items.size > 1) {
-            Spacer(modifier = Modifier.height(14.dp))
             HeroPageIndicator(
                 itemCount = items.size,
                 pagerState = pagerState,
@@ -1850,94 +1925,40 @@ private fun CoverflowInfoPanel(
 }
 
 @Composable
-private fun CoverflowItemInfo(
+private fun CoverflowItemLogo(
     item: MetaPreview,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
-    val contentColor = MaterialTheme.colorScheme.onBackground
     var logoLoadError by remember(item.type, item.id, item.logo) { mutableStateOf(false) }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
 
-    val detailsState = remember(item.type, item.id) {
-        mutableStateOf(MetaDetailsRepository.peek(item.type, item.id))
-    }
-    LaunchedEffect(item.type, item.id) {
-        if (detailsState.value == null) {
-            detailsState.value = runCatching {
-                MetaDetailsRepository.fetch(item.type, item.id)
-            }.getOrNull()
-        }
-    }
-    val details = detailsState.value
-    val rating = (item.imdbRating ?: details?.imdbRating)
-        ?.takeIf { raw -> raw.toDoubleOrNull()?.let { it > 0.0 } == true }
-    val year = (item.releaseInfo ?: details?.releaseInfo)
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::formatReleaseDateForDisplay)
-    val genre = (item.genres.firstOrNull() ?: details?.genres?.firstOrNull())?.takeIf { it.isNotBlank() }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(COVERFLOW_WIDE_LOGO_HEIGHT)
+            .clickable(enabled = onItemClick != null) { onItemClick?.invoke(item) },
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .clickable(enabled = onItemClick != null) { onItemClick?.invoke(item) },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (logoUrl != null && !logoLoadError) {
-                AsyncImage(
-                    model = logoUrl,
-                    contentDescription = item.name,
-                    modifier = Modifier
-                        .fillMaxWidth(0.6f)
-                        .fillMaxHeight(),
-                    contentScale = ContentScale.Fit,
-                    onError = { logoLoadError = true },
-                )
-            } else {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = contentColor,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(22.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            var needsDot = false
-            if (rating != null) {
-                Icon(
-                    imageVector = Icons.Rounded.Star,
-                    contentDescription = null,
-                    tint = HeroRatingStar,
-                    modifier = Modifier.size(18.dp),
-                )
-                HeroMetaText(text = rating, color = contentColor)
-                needsDot = true
-            }
-            year?.let {
-                if (needsDot) HeroMetaDot(color = contentColor)
-                HeroMetaText(text = it, color = contentColor)
-                needsDot = true
-            }
-            genre?.let {
-                if (needsDot) HeroMetaDot(color = contentColor)
-                HeroMetaText(text = it, color = contentColor, modifier = Modifier.weight(1f, fill = false))
-            }
+        if (logoUrl != null && !logoLoadError) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = item.name,
+                modifier = Modifier
+                    .fillMaxWidth(0.4f)
+                    .fillMaxHeight(),
+                contentScale = ContentScale.Fit,
+                onError = { logoLoadError = true },
+            )
+        } else {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

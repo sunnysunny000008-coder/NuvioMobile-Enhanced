@@ -1840,8 +1840,10 @@ private fun CoverflowPosterStack(
 ) {
     val posterShape = RoundedCornerShape(COVERFLOW_POSTER_CORNER_RADIUS)
 
+    // Deck: draw the furthest-back cards first so the front card (and a card leaving to the left) end up on top.
+    val drawOrder = if (deck) layers.asReversed() else layers
     Box(modifier = Modifier.fillMaxSize()) {
-        layers.forEach { layer ->
+        drawOrder.forEach { layer ->
             val item = items[layer.itemIndex]
             // Portrait shows the poster; wide layouts use the backdrop so no title is printed twice.
             val artworkUrl = if (metrics.wide) {
@@ -1862,8 +1864,6 @@ private fun CoverflowPosterStack(
                                 pagerState.currentPageOffsetFraction
                             val distance = abs(position)
                             if (deck) {
-                                // Front card on top; cards further back sit lower in the stack.
-                                zIndex = 10f - position
                                 val depth = position.coerceIn(0f, COVERFLOW_DECK_VISIBLE_DEPTH)
                                 val scale = 1f - COVERFLOW_DECK_SCALE_DROP * depth
                                 scaleX = scale

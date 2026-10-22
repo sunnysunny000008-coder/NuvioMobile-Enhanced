@@ -45,6 +45,8 @@ object TmdbMetadataService {
     private val entityRailCache = mutableMapOf<String, List<MetaPreview>>()
     private val nativeKeywordCache = mutableMapOf<String, List<TmdbKeyword>>()
     private val nativeGenreCache = mutableMapOf<String, List<TmdbKeyword>>()
+    private val nativeCandidateCache = mutableMapOf<String, List<NativeDiscoverCandidate>>()
+    private val nativeTvMatureCache = mutableMapOf<Int, Boolean>()
     private val backdropCache = linkedMapOf<String, String?>()
     private val backdropCacheMutex = Mutex()
     private val backdropRequests = Semaphore(4)
@@ -542,6 +544,61 @@ object TmdbMetadataService {
         }.distinctBy { it.id }.take(limit)
         entityRailCache[cacheKey] = mapped
         return mapped
+    }
+
+    /**
+     * Discover results that keep the TMDB genre ids and vote data, so native recommendations can
+     * be ranked against the viewer's taste instead of being shown in raw TMDB order.
+     */
+    suspend fun fetchNativeDiscoverCandidates(
+        mediaType: TmdbEntityMediaType,
+        filters: Map<String, String>,
+        language: String,
+        page: Int = 1,
+        forceRefresh: Boolean = false,
+    ): List<NativeDiscoverCandidate> {
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val cacheKey = "native-candidates:${mediaType.value}:$normalizedLanguage:$page:${filters.toSortedMap()}"
+        if (!forceRefresh) nativeCandidateCache[cacheKey]?.let { return it }
+        val endpoint = if (mediaType == TmdbEntityMediaType.MOVIE) "discover/movie" else "discover/tv"
+        val query = buildMap {
+            put("language", normalizedLanguage)
+            put("page", page.coerceAtLeast(1).toString())
+            put("sort_by", "popularity.desc")
+            put("include_adult", "false")
+            filters.forEach { (key, value) -> put(key, value) }
+        }
+        val response = fetch<TmdbDiscoverResponse>(endpoint = endpoint, query = query) ?: return emptyList()
+        val mapped = response.results.mapNotNull { result ->
+            val preview = mapEntityDiscoverResult(result, mediaType, normalizedLanguage, emptyMap()) ?: return@mapNotNull null
+            NativeDiscoverCandidate(
+                preview = preview,
+                genreIds = result.genreIds,
+                voteAverage = result.voteAverage ?: 0.0,
+                voteCount = result.voteCount ?: 0,
+            )
+        }.distinctBy { it.preview.id }
+        nativeCandidateCache[cacheKey] = mapped
+        return mapped
+    }
+
+    /**
+     * TMDB Discover cannot filter TV by age rating, so native recommendations check the rating of
+     * the few shows they are about to display. A show is mature when its US rating is TV-MA, or
+     * when it has no US rating and any country rates it 18+.
+     */
+    suspend fun isNativeTvMature(tvId: Int): Boolean {
+        nativeTvMatureCache[tvId]?.let { return it }
+        val response = fetch<TmdbContentRatingsResponse>(endpoint = "tv/$tvId/content_ratings") ?: return false
+        val ratings = response.results.mapNotNull { entry ->
+            val rating = entry.rating?.trim()?.uppercase()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            entry.country.orEmpty().uppercase() to rating
+        }
+        val matureRatings = setOf("TV-MA", "18", "18+", "R", "R18", "R18+", "NC-17", "X", "TV-18", "FSK 18", "FSK18")
+        val us = ratings.firstOrNull { it.first == "US" }?.second
+        val mature = if (us != null) us == "TV-MA" else ratings.any { it.second in matureRatings }
+        nativeTvMatureCache[tvId] = mature
+        return mature
     }
 
     suspend fun fetchEntityRailPage(
@@ -2394,4 +2451,24 @@ internal data class TmdbDiscoverResult(
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("vote_count") val voteCount: Int? = null,
     @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
+)
+
+
+/** A TMDB discover hit plus the raw signals needed to score it against a taste profile. */
+data class NativeDiscoverCandidate(
+    val preview: MetaPreview,
+    val genreIds: List<Int>,
+    val voteAverage: Double,
+    val voteCount: Int,
+)
+
+@Serializable
+private data class TmdbContentRatingsResponse(
+    val results: List<TmdbContentRatingEntry> = emptyList(),
+)
+
+@Serializable
+private data class TmdbContentRatingEntry(
+    @SerialName("iso_3166_1") val country: String? = null,
+    val rating: String? = null,
 )

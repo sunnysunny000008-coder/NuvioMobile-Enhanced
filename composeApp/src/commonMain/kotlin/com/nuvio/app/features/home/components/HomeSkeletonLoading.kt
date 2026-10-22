@@ -108,7 +108,10 @@ internal fun HomeSkeletonHero(
         )
         val containerWidth = maxWidth
         val heroHeight = when {
-            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding, viewportHeight, layout.isTablet)
+            isCoverflowStyle -> coverflowHeroHeight(
+                maxWidth, statusBarTopPadding, viewportHeight, layout.isTablet,
+                deck = heroStyle == HomeHeroStyle.STACKED_DECK,
+            )
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,

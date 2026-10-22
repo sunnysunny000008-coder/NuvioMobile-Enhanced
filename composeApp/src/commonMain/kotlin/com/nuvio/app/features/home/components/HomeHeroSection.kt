@@ -190,9 +190,21 @@ private val COVERFLOW_AMBIENT_BLUR_RADIUS = 40.dp
 private const val COVERFLOW_AMBIENT_OVERSCAN = 1.3f
 private const val COVERFLOW_AMBIENT_TINT_TOP_ALPHA = 0.42f
 private const val COVERFLOW_AMBIENT_TINT_MID_ALPHA = 0.72f
-private const val COVERFLOW_DECK_VISIBLE_DEPTH = 2f
-private const val COVERFLOW_DECK_SCALE_DROP = 0.08f
-private const val COVERFLOW_DECK_PEEK_FRACTION = 0.1f
+private const val COVERFLOW_DECK_VISIBLE_DEPTH = 3f
+private const val COVERFLOW_DECK_SCALE_DROP = 0.07f
+/** How far (as a fraction of the card width) each card further back is nudged to the right. */
+private const val COVERFLOW_DECK_PEEK_FRACTION = 0.085f
+/** Darkening of the card at full depth, so the stack reads as receding. */
+private const val COVERFLOW_DECK_DIM_PER_LEVEL = 0.16f
+/** Portrait deck cards are a little wider than coverflow's so the whole stack fills the width. */
+private const val COVERFLOW_DECK_POSTER_WIDTH_FRACTION = 0.70f
+/**
+ * The visible stack (front card + peeking edges) is wider than the front card alone and leans right.
+ * Shift everything left by half of the overhang so the stack as a whole is centred on screen.
+ */
+private const val COVERFLOW_DECK_GROUP_SHIFT_FRACTION =
+    ((0.5f * (1f - COVERFLOW_DECK_SCALE_DROP * COVERFLOW_DECK_VISIBLE_DEPTH) +
+        COVERFLOW_DECK_VISIBLE_DEPTH * COVERFLOW_DECK_PEEK_FRACTION) - 0.5f) / 2f
 private const val COVERFLOW_DECK_EXIT_TILT_DEGREES = -6f
 internal val COVERFLOW_TOP_GAP = 24.dp
 internal val COVERFLOW_POSTER_BOTTOM_GAP = 20.dp
@@ -234,9 +246,11 @@ internal fun coverflowMetrics(
     viewportHeight: Dp?,
     statusBarTopPadding: Dp,
     isTablet: Boolean,
+    deck: Boolean = false,
 ): CoverflowMetrics {
     if (!heroUsesWideArtwork(maxWidth, viewportHeight, isTablet)) {
-        val posterWidth = maxWidth * COVERFLOW_POSTER_WIDTH_FRACTION
+        val posterWidth = maxWidth *
+            if (deck) COVERFLOW_DECK_POSTER_WIDTH_FRACTION else COVERFLOW_POSTER_WIDTH_FRACTION
         return CoverflowMetrics(
             wide = false,
             cardWidth = posterWidth,
@@ -269,7 +283,8 @@ internal fun coverflowHeroHeight(
     statusBarTopPadding: Dp,
     viewportHeight: Dp?,
     isTablet: Boolean,
-): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet)
+    deck: Boolean = false,
+): Dp = coverflowMetrics(maxWidth, viewportHeight, statusBarTopPadding, isTablet, deck)
     .heroHeight(statusBarTopPadding)
 
 internal fun cardHeroHeight(
@@ -593,6 +608,7 @@ internal fun HomeHeroSection(
                 viewportHeight = viewportHeight,
                 statusBarTopPadding = statusBarTopPadding,
                 isTablet = baseLayout.isTablet,
+                deck = isDeckStyle,
             )
             val layout = when {
                 isCoverflowStyle -> baseLayout.copy(
@@ -1279,7 +1295,10 @@ internal fun HomeHeroReservedSpace(
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
         val heroHeight = when {
-            isCoverflowStyle -> coverflowHeroHeight(maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet)
+            isCoverflowStyle -> coverflowHeroHeight(
+                maxWidth, statusBarTopPadding, viewportHeight, baseLayout.isTablet,
+                deck = heroStyle == HomeHeroStyle.STACKED_DECK,
+            )
             isCardStyle -> cardHeroHeight(
                 maxWidth = maxWidth,
                 viewportHeight = viewportHeight,
@@ -1892,7 +1911,8 @@ private fun CoverflowAmbientBackdrop(
 /**
  * Centered card with angled, slightly smaller neighbours peeking in from both edges (coverflow),
  * or, when [deck] is true, a stack of cards: the front card is thrown off to the left on swipe while
- * the cards behind it are smaller, nudged to the right and revealed one by one.
+ * the cards behind it (three of them show) are smaller, darker and nudged to the right, and move
+ * forward one by one. The stack as a whole is centred on screen.
  */
 @Composable
 private fun CoverflowPosterStack(
@@ -1905,8 +1925,19 @@ private fun CoverflowPosterStack(
 ) {
     val posterShape = RoundedCornerShape(COVERFLOW_POSTER_CORNER_RADIUS)
 
-    // Deck: draw the furthest-back cards first so the front card (and a card leaving to the left) end up on top.
-    val drawOrder = if (deck) layers.asReversed() else layers
+    // Deck: compose the front card, one card that has just left to the left, and the cards stacked behind it
+    // (plus one more that fades in at the back). They are drawn furthest-back first, so the front card and a
+    // card leaving to the left end up on top.
+    val drawOrder = if (deck) {
+        val current = pagerState.currentPage
+        val behind = minOf(COVERFLOW_DECK_VISIBLE_DEPTH.toInt() + 1, items.size - 1)
+        ((current - 1)..(current + behind))
+            .filter { page -> page >= 0 && page < pagerState.pageCount }
+            .map { page -> HeroPageLayer(page = page, itemIndex = page % items.size) }
+            .sortedByDescending { layer -> layer.page }
+    } else {
+        layers
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         drawOrder.forEach { layer ->
             val item = items[layer.itemIndex]
@@ -1933,16 +1964,17 @@ private fun CoverflowPosterStack(
                                 val scale = 1f - COVERFLOW_DECK_SCALE_DROP * depth
                                 scaleX = scale
                                 scaleY = scale
-                                translationX = when {
+                                val cardWidthPx = metrics.cardWidth.toPx()
+                                translationX = -cardWidthPx * COVERFLOW_DECK_GROUP_SHIFT_FRACTION + when {
                                     // Behind the front card: shift right so each card's edge shows.
-                                    position >= 0f -> depth * metrics.cardWidth.toPx() * COVERFLOW_DECK_PEEK_FRACTION
+                                    position >= 0f -> depth * cardWidthPx * COVERFLOW_DECK_PEEK_FRACTION
                                     // Front card leaving to the left (or coming back from it).
-                                    else -> position.coerceAtLeast(-1.5f) * metrics.cardWidth.toPx() * 1.05f
+                                    else -> position.coerceAtLeast(-1.5f) * cardWidthPx * 1.05f
                                 }
                                 rotationZ = if (position < 0f) position.coerceAtLeast(-1f) * COVERFLOW_DECK_EXIT_TILT_DEGREES else 0f
                                 alpha = when {
                                     position < 0f -> (1f + position * 1.2f).coerceIn(0f, 1f)
-                                    else -> (COVERFLOW_DECK_VISIBLE_DEPTH + 0.5f - position).coerceIn(0f, 1f)
+                                    else -> (COVERFLOW_DECK_VISIBLE_DEPTH + 1f - position).coerceIn(0f, 1f)
                                 }
                                 shape = posterShape
                                 clip = true
@@ -1967,6 +1999,20 @@ private fun CoverflowPosterStack(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
+                    if (deck) {
+                        // Cards further back are darker.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    val position = (layer.page - pagerState.currentPage) -
+                                        pagerState.currentPageOffsetFraction
+                                    alpha = (position.coerceIn(0f, COVERFLOW_DECK_VISIBLE_DEPTH) *
+                                        COVERFLOW_DECK_DIM_PER_LEVEL).coerceIn(0f, 1f)
+                                }
+                                .background(Color.Black),
+                        )
+                    }
                     if (metrics.wide) {
                         // Scrim so the logo stays readable on bright artwork.
                         Box(

@@ -1,9 +1,10 @@
 package com.nuvio.app.features.home
 
 import androidx.compose.ui.text.intl.Locale
-import com.nuvio.app.features.ai.NativeRecommendationRow
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.collection.Collection
+import com.nuvio.app.features.ai.NativeRecommendationRow
+import com.nuvio.app.features.ai.NativeRecommendationsRepository
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.servers.ServerCatalog
 import com.nuvio.app.features.servers.ServerRepository
@@ -256,6 +257,11 @@ object HomeCatalogSettingsRepository {
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
+    fun refreshNativeRecommendationCatalogs() {
+        ensureLoaded()
+        publish()
+    }
+
     fun syncCatalogs(addons: List<ManagedAddon>) {
         ensureLoaded()
         val collections = CollectionRepository.collections.value
@@ -494,21 +500,11 @@ object HomeCatalogSettingsRepository {
     }
 
     private fun normalizePreferences() {
-        val current = preferences.toMutableMap()
-        // Migrate the short-lived keys written by the earlier native-row fix while preserving
-        // custom titles, enabled state, ordering, and row-shape preferences.
-        NativeRecommendationRow.values().forEach { row ->
-            val oldPreference = current[row.key]
-            if (oldPreference != null && current[row.catalogKey] == null) {
-                current[row.catalogKey] = oldPreference.copy(key = row.catalogKey)
-            }
-            current.remove(row.key)
-        }
+        val current = preferences
         data class UnifiedEntry(val key: String, val isCollection: Boolean)
         val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }
-        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.catalogKey, false) }
         val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }
-        val allEntries = catalogEntries + nativeRecommendationEntries + collectionEntries
+        val allEntries = catalogEntries + collectionEntries
         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)
         var nextOrder = (current.values.maxOfOrNull(StoredHomeCatalogPreference::order) ?: -1) + 1
 
@@ -585,22 +581,23 @@ object HomeCatalogSettingsRepository {
             )
         }
 
-        val nativeItems = NativeRecommendationRow.values().map { row ->
-            val preference = preferences[row.catalogKey]
+        val nativeEnabled = runCatching { NativeRecommendationsRepository.ensureLoaded(); NativeRecommendationsRepository.uiState.value.enabled }.getOrDefault(false)
+        val nativeItems = if (nativeEnabled) NativeRecommendationRow.values().mapIndexed { index, row ->
+            val key = row.catalogKey
+            val preference = preferences[key]
             HomeCatalogSettingsItem(
-                key = row.catalogKey,
+                key = key,
                 defaultTitle = row.title,
-                addonName = "Native TMDB",
+                addonName = "TMDB",
                 customTitle = preference?.customTitle.orEmpty(),
                 enabled = preference?.enabled ?: true,
                 heroSourceEnabled = false,
-                order = preference?.order ?: 0,
+                order = preference?.order ?: (catalogItems.size + collectionItems.size + index),
                 rowShape = HomeRowShapeMode.fromStorageValue(preference?.rowShape),
             )
-        }
-
-        val items = (catalogItems + nativeItems + collectionItems)
-            .sortedWith(compareBy<HomeCatalogSettingsItem> { it.order }.thenBy { it.key })
+        } else emptyList()
+        val items = (catalogItems + collectionItems + nativeItems)
+            .sortedBy { it.order }
 
         _uiState.value = HomeCatalogSettingsUiState(
             heroEnabled = heroEnabled,

@@ -929,18 +929,8 @@ fun HomeScreen(
     }.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         AiRecommendationsRepository.refresh()
-    }
-    // Re-evaluate native taste shelves when the active profile's watched history or playback
-    // progress changes. The repository signature/cache prevents unnecessary TMDB requests.
-    LaunchedEffect(
-        watchedUiState.items.map { it.id to it.markedAtEpochMs },
-        watchProgressUiState.entries
-            .filter { entry -> entry.isCompleted || (entry.durationMs > 0L && entry.lastPositionMs.toDouble() / entry.durationMs >= 0.2) }
-            .map { it.parentMetaId to it.parentMetaType }
-            .distinct(),
-    ) {
         NativeRecommendationsRepository.ensureLoaded()
-        NativeRecommendationsRepository.refresh(force = true)
+        NativeRecommendationsRepository.refresh()
     }
     val nativeRecommendationsUiState by remember {
         NativeRecommendationsRepository.ensureLoaded()
@@ -1360,42 +1350,16 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                        }
-                        // Native TMDB families are selectable in the existing chooser for any catalog category.
-                        val selectedNativeCatalogKeys = enabledHomeItems
-                            .asSequence()
-                            .filter { it.enabled }
-                            .map { it.key }
-                            .filter { it.startsWith("native_rec_") }
-                            .toSet()
                             if (nativeRecommendationsUiState.enabled) {
-                                nativeRecommendationsUiState.sections
-                                    .filter { section ->
-                                        selectedNativeCatalogKeys.any { catalogKey ->
-                                            val rowKey = catalogKey.removePrefix("native_rec_")
-                                            section.key == "native_$rowKey" || section.key.startsWith("native_${rowKey}_")
-                                        }
-                                    }
-                                    .forEach { section ->
-                                    val categoryItems = when (activeCategory?.id) {
-                                        HOME_CATEGORY_MOVIES_ID -> section.items.filter { it.type.equals("movie", ignoreCase = true) }
-                                        HOME_CATEGORY_TV_ID -> section.items.filter { it.type.equals("tv", ignoreCase = true) }
-                                        else -> section.items
-                                    }
-                                    if (categoryItems.isNotEmpty()) {
+                                nativeRecommendationsUiState.sections.forEach { section ->
+                                    val nativeRow = com.nuvio.app.features.ai.NativeRecommendationRow.fromKey(section.key.removePrefix("native_"))
+                                    val catalogPreference = nativeRow?.let { row -> homeSettingsUiState.items.firstOrNull { it.key == row.catalogKey } }
+                                    if (section.items.isNotEmpty() && catalogPreference?.enabled != false && nativeRow != null && nativeRow in nativeRecommendationsUiState.enabledRows) {
+                                        val displaySection = catalogPreference?.customTitle?.takeIf { it.isNotBlank() }?.let { section.copy(title = it) } ?: section
                                         item(key = "native_recommendation_${section.key}") {
-                                            val familySetting = enabledHomeItems.firstOrNull { item ->
-                                                if (!item.key.startsWith("native_rec_")) return@firstOrNull false
-                                                val rowKey = item.key.removePrefix("native_rec_")
-                                                section.key == "native_$rowKey" || section.key.startsWith("native_${rowKey}_")
-                                            }
                                             HomeCatalogRowSection(
-                                                section = section.copy(
-                                                    items = categoryItems,
-                                                    availableItemCount = categoryItems.size,
-                                                    landscapeModeOverride = familySetting?.rowShape?.landscapeOverride,
-                                                ),
-                                                entries = categoryItems.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                                section = displaySection,
+                                                entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                                 modifier = Modifier.padding(bottom = 12.dp),
                                                 sectionPadding = homeSectionPadding,
                                                 onViewAllClick = null,
@@ -1408,6 +1372,7 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                        }
                     }
                 }
             }

@@ -947,6 +947,7 @@ private fun MobileSettingsScreen(
                     onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                     onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
+                    onNativeRecommendationsClick = { onPageChange(SettingsPage.NativeRecommendations) },
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -965,6 +966,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = tmdbSettings,
                 )
+                SettingsPage.NativeRecommendations -> nativeRecommendationsSettingsContent(isTablet = false)
                 SettingsPage.MdbListRatings -> mdbListSettingsContent(
                     isTablet = false,
                     settings = mdbListSettings,
@@ -1444,6 +1446,7 @@ private fun TabletSettingsScreen(
                         onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                         onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
+                        onNativeRecommendationsClick = { onPageChange(SettingsPage.NativeRecommendations) },
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1462,6 +1465,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = tmdbSettings,
                     )
+                    SettingsPage.NativeRecommendations -> nativeRecommendationsSettingsContent(isTablet = true)
                     SettingsPage.MdbListRatings -> mdbListSettingsContent(
                         isTablet = true,
                         settings = mdbListSettings,

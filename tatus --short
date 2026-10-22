@@ -1,0 +1,25 @@
+[1mdiff --git a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/home/HomeCatalogSettingsRepository.kt b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/home/HomeCatalogSettingsRepository.kt[m
+[1mindex 80c9c433..dadbe219 100644[m
+[1m--- a/composeApp/src/commonMain/kotlin/com/nuvio/app/features/home/HomeCatalogSettingsRepository.kt[m
+[1m+++ b/composeApp/src/commonMain/kotlin/com/nuvio/app/features/home/HomeCatalogSettingsRepository.kt[m
+[36m@@ -497,7 +497,7 @@[m [mobject HomeCatalogSettingsRepository {[m
+         val current = preferences[m
+         data class UnifiedEntry(val key: String, val isCollection: Boolean)[m
+         val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }[m
+[31m-        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.catalogKey, false) }[m
+[32m+[m[32m        val nativeRecommendationEntries = NativeRecommendationRow.values().map { UnifiedEntry(it.key, false) }[m
+         val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }[m
+         val allEntries = catalogEntries + nativeRecommendationEntries + collectionEntries[m
+         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)[m
+[36m@@ -577,9 +577,9 @@[m [mobject HomeCatalogSettingsRepository {[m
+         }[m
+ [m
+         val nativeItems = NativeRecommendationRow.values().map { row ->[m
+[31m-            val preference = preferences[row.catalogKey][m
+[32m+[m[32m            val preference = preferences[row.key][m
+             HomeCatalogSettingsItem([m
+[31m-                key = row.catalogKey,[m
+[32m+[m[32m                key = row.key,[m
+                 defaultTitle = row.title,[m
+                 addonName = "Native TMDB",[m
+                 customTitle = preference?.customTitle.orEmpty(),[m

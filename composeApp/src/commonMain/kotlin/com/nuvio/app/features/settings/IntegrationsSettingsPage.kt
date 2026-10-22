@@ -31,6 +31,7 @@ internal fun LazyListScope.integrationsContent(
     onOmdbClick: () -> Unit,
     onLiveTvClick: () -> Unit,
     onDiscordClick: () -> Unit,
+    onNativeRecommendationsClick: () -> Unit,
 ) {
     item {
         SettingsSection(
@@ -80,7 +81,13 @@ internal fun LazyListScope.integrationsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 GeminiRecommendationsCollapsibleRow(isTablet = isTablet)
                 SettingsGroupDivider(isTablet = isTablet)
-                NativeRecommendationsCollapsibleRow(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Native TMDB Recommendations",
+                    description = "Personalized TMDB shelves and taste preferences.",
+                    icon = Icons.Rounded.Theaters,
+                    isTablet = isTablet,
+                    onClick = onNativeRecommendationsClick,
+                )
                 if (DiscordRpcPlatform.isSupported) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(

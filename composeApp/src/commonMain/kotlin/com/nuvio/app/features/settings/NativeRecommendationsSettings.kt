@@ -1,17 +1,13 @@
 package com.nuvio.app.features.settings
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,144 +17,55 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.ai.NativeRecommendationRow
-import com.nuvio.app.features.ai.NativeTasteBuilderRepository
 import com.nuvio.app.features.ai.NativeRecommendationsRepository
 
 @Composable
-internal fun NativeRecommendationsCollapsibleRow(isTablet: Boolean) {
-    val state by remember {
-        NativeRecommendationsRepository.ensureLoaded()
-        NativeRecommendationsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    var expanded by remember { mutableStateOf(false) }
-    var tasteBuilderExpanded by remember { mutableStateOf(false) }
-    var selectedTasteGenres by remember { mutableStateOf(NativeTasteBuilderRepository.selectedGenres().toSet()) }
-
+internal fun nativeRecommendationsSettingsContent(isTablet: Boolean) {
+    val state by remember { NativeRecommendationsRepository.ensureLoaded(); NativeRecommendationsRepository.uiState }.collectAsStateWithLifecycle()
+    var taste by remember { mutableStateOf(NativeRecommendationsRepository.tastePreferences()) }
+    val genres = listOf("28" to "Action", "12" to "Adventure", "16" to "Animation", "35" to "Comedy", "80" to "Crime", "18" to "Drama", "14" to "Fantasy", "27" to "Horror", "9648" to "Mystery", "10749" to "Romance", "878" to "Sci-Fi", "53" to "Thriller")
     Column {
-        SettingsNavigationRow(
-            title = "Native TMDB Recommendations",
-            description = "Personalized TMDB shelves using this profile's viewing history. No Gemini required.",
-            icon = Icons.Rounded.AutoAwesome,
-            isTablet = isTablet,
-            trailingContent = {
-                Icon(
-                    imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            onClick = { expanded = !expanded },
-        )
-        AnimatedVisibility(visible = expanded) {
-            Column {
+        SettingsSection(title = "NATIVE TMDB RECOMMENDATIONS", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(title = "Native TMDB Recommendations", description = "Movie and series discovery powered by TMDB. Independent of Gemini.", icon = Icons.Rounded.Theaters, isTablet = isTablet, onClick = { NativeRecommendationsRepository.refresh() })
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = "Enable native recommendations",
-                    description = "Adds TMDB-powered rows to Home independently of Gemini.",
-                    checked = state.enabled,
-                    isTablet = isTablet,
-                    onCheckedChange = NativeRecommendationsRepository::setEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = "Movie / Series Balance",
-                    description = "Choose the target mix for shelves that include both movies and TV series.",
-                    icon = Icons.Rounded.AutoAwesome,
-                    isTablet = isTablet,
-                    trailingContent = {
-                        androidx.compose.foundation.layout.Row {
-                            listOf(50, 60, 70).forEach { percent ->
-                                TextButton(onClick = { NativeRecommendationsRepository.setMovieRatioPercent(percent) }) {
-                                    Text(
-                                        text = "$percent/${100 - percent}",
-                                        color = if (state.movieRatioPercent == percent) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    onClick = {},
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = "Build My Taste Profile",
-                    description = "Choose the genres you enjoy. Native TMDB recommendations will prioritize them.",
-                    icon = Icons.Rounded.AutoAwesome,
-                    isTablet = isTablet,
-                    trailingContent = {
-                        Icon(
-                            imageVector = if (tasteBuilderExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    onClick = { tasteBuilderExpanded = !tasteBuilderExpanded },
-                )
-                AnimatedVisibility(visible = tasteBuilderExpanded) {
-                    Column {
-                        Text(
-                            text = "What do you like watching? Select as many genres as you want. Your choices are saved on this device and do not affect Gemini recommendations or other settings.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        )
-                        NativeTasteBuilderRepository.availableGenres.forEach { genre ->
-                            SettingsSwitchRow(
-                                title = genre,
-                                description = if (genre in selectedTasteGenres) "Preferred genre" else "Not selected",
-                                checked = genre in selectedTasteGenres,
-                                isTablet = isTablet,
-                                onCheckedChange = { checked ->
-                                    val updated = if (checked) selectedTasteGenres + genre else selectedTasteGenres - genre
-                                    selectedTasteGenres = updated
-                                    NativeTasteBuilderRepository.setSelectedGenres(updated)
-                                },
-                            )
-                        }
-                        TextButton(
-                            onClick = { NativeRecommendationsRepository.refresh(force = true) },
-                            enabled = state.enabled && !state.isLoading,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        ) {
-                            Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null)
-                            Text(text = if (state.isLoading) "Updating recommendations…" else "Apply taste profile")
-                        }
-                    }
-                }
-                NativeRecommendationRow.values().forEach { row ->
+                SettingsSwitchRow(title = "Enable native recommendations", description = "Show enabled native rows on Home.", checked = state.enabled, isTablet = isTablet, onCheckedChange = NativeRecommendationsRepository::setEnabled)
+                if (state.enabled) NativeRecommendationRow.values().forEach { row ->
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = row.title,
-                        description = row.subtitle,
-                        checked = row in state.enabledRows,
-                        isTablet = isTablet,
-                        onCheckedChange = { NativeRecommendationsRepository.setRowEnabled(row, it) },
-                    )
+                    SettingsSwitchRow(title = row.title, description = row.subtitle, checked = row in state.enabledRows, isTablet = isTablet, onCheckedChange = { NativeRecommendationsRepository.setRowEnabled(row, it) })
+                }
+            }
+        }
+        SettingsSection(title = "BUILD MY TASTE PROFILE", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                Text("Genres you enjoy", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp))
+                genres.forEach { (id, name) ->
+                    SettingsSwitchRow(title = name, description = null, checked = id in taste.genreIds, isTablet = isTablet, onCheckedChange = { checked -> taste = taste.copy(genreIds = if (checked) taste.genreIds + id else taste.genreIds - id) })
                 }
                 SettingsGroupDivider(isTablet = isTablet)
-                TextButton(
-                    onClick = { NativeRecommendationsRepository.refresh(force = true) },
-                    enabled = state.enabled && !state.isLoading,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                ) {
-                    Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null)
-                    Text(text = if (state.isLoading) "Refreshing…" else "Refresh recommendations")
-                }
-                state.errorMessage?.let { message ->
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                }
+                SettingsChoiceRowCompat(title = "Release era", value = taste.releaseEra, options = listOf("any" to "Any era", "classic" to "Before 1980", "80s90s" to "1980s–1990s", "2000s" to "2000s", "2010s" to "2010s", "2020s" to "2020s"), isTablet = isTablet, onChange = { taste = taste.copy(releaseEra = it) })
                 SettingsGroupDivider(isTablet = isTablet)
-                Text(
-                    text = "Personalized rows use this Nuvio profile's watched titles and saved library first. " +
-                        "Connected trackers are optional. Results are cached for up to 6 hours; use Refresh now to rebuild them.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
+                SettingsChoiceRowCompat(title = "Original language", value = taste.language, options = listOf("any" to "Any language", "en" to "English", "ko" to "Korean", "ja" to "Japanese", "hi" to "Hindi", "bn" to "Bengali", "fr" to "French", "es" to "Spanish"), isTablet = isTablet, onChange = { taste = taste.copy(language = it) })
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsChoiceRowCompat(title = "Minimum TMDB rating", value = taste.minimumRating, options = listOf("0" to "Any rating", "5" to "5+", "6" to "6+", "7" to "7+", "8" to "8+"), isTablet = isTablet, onChange = { taste = taste.copy(minimumRating = it) })
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsChoiceRowCompat(title = "Discovery style", value = taste.discovery, options = listOf("popular" to "Popular hits", "hidden" to "Hidden gems"), isTablet = isTablet, onChange = { taste = taste.copy(discovery = it) })
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(title = "Apply taste profile", description = "Save preferences and refresh recommendations.", icon = Icons.Rounded.Theaters, isTablet = isTablet, onClick = { NativeRecommendationsRepository.saveTastePreferences(taste) })
+            }
+        }
+        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp)) }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SettingsChoiceRowCompat(title: String, value: String, options: List<Pair<String, String>>, isTablet: Boolean, onChange: (String) -> Unit) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        FlowRow {
+            options.forEach { (key, label) ->
+                androidx.compose.material3.FilterChip(selected = value == key, onClick = { onChange(key) }, label = { Text(label) }, modifier = Modifier.padding(end = 4.dp))
             }
         }
     }

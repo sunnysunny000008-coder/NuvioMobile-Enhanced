@@ -180,6 +180,11 @@ internal fun heroUsesWideArtwork(
 ): Boolean = isTablet || (viewportHeight != null && maxWidth > viewportHeight)
 
 internal const val COVERFLOW_POSTER_WIDTH_FRACTION = 0.62f
+/**
+ * Portrait coverflow / stacked deck cards are taller than a standard TMDB poster (1.5) so the hero feels
+ * bigger. Width is untouched, so the stack spacing and side offsets stay the same; artwork is cropped to fit.
+ */
+private const val COVERFLOW_PORTRAIT_CARD_HEIGHT_RATIO = 1.68f
 /** Neighbour spacing, as a multiple of the centre card's width (0.5 of the screen at 0.62 poster width). */
 private const val COVERFLOW_SIDE_OFFSET_CARD_FRACTION = 0.5f / COVERFLOW_POSTER_WIDTH_FRACTION
 private const val COVERFLOW_SIDE_SCALE_DROP = 0.15f
@@ -254,7 +259,7 @@ internal fun coverflowMetrics(
         return CoverflowMetrics(
             wide = false,
             cardWidth = posterWidth,
-            cardHeight = posterWidth * TMDB_POSTER_HEIGHT_RATIO,
+            cardHeight = posterWidth * COVERFLOW_PORTRAIT_CARD_HEIGHT_RATIO,
             topGap = COVERFLOW_TOP_GAP,
             bottomGap = COVERFLOW_POSTER_BOTTOM_GAP,
             infoHeight = COVERFLOW_DOTS_HEIGHT,

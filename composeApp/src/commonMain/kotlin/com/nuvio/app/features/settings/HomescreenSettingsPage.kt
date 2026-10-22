@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -231,11 +233,50 @@ internal fun LazyListScope.homescreenSettingsContent(
     }
 }
 
+private data class HeroStyleChoice(
+    val style: HomeHeroStyle,
+    val title: String,
+    val description: String,
+)
+
 @Composable
 private fun HeroStyleOptions(
     isTablet: Boolean,
     selectedStyle: HomeHeroStyle,
 ) {
+    val fullBleedTitle = stringResource(Res.string.settings_homescreen_hero_style_full_bleed)
+    val fullBleedDescription = stringResource(Res.string.settings_homescreen_hero_style_full_bleed_description)
+    val cardTitle = stringResource(Res.string.settings_homescreen_hero_style_card)
+    val cardDescription = stringResource(Res.string.settings_homescreen_hero_style_card_description)
+    val netflixTitle = stringResource(Res.string.settings_homescreen_hero_style_netflix)
+    val netflixDescription = stringResource(Res.string.settings_homescreen_hero_style_netflix_description)
+    val choices = remember(
+        fullBleedTitle, fullBleedDescription, cardTitle, cardDescription, netflixTitle, netflixDescription,
+    ) {
+        listOf(
+            HeroStyleChoice(HomeHeroStyle.FULL_BLEED, fullBleedTitle, fullBleedDescription),
+            HeroStyleChoice(HomeHeroStyle.CARD, cardTitle, cardDescription),
+            HeroStyleChoice(HomeHeroStyle.NETFLIX, netflixTitle, netflixDescription),
+            HeroStyleChoice(
+                HomeHeroStyle.COVERFLOW,
+                "Coverflow Poster Stack",
+                "Centered poster with neighboring posters peeking over a tinted backdrop.",
+            ),
+            HeroStyleChoice(
+                HomeHeroStyle.STACKED_DECK,
+                "Stacked Deck",
+                "Centered card with the next cards stacked behind it. Posters in portrait, backdrops with the title in landscape.",
+            ),
+            HeroStyleChoice(
+                HomeHeroStyle.CONTINUE_WATCHING,
+                "Continue Watching",
+                "Resume what you were watching, with a progress bar. Shows the Netflix-style trending hero when there is nothing to resume.",
+            ),
+        )
+    }
+    val selectedChoice = choices.firstOrNull { it.style == selectedStyle } ?: choices.first()
+    var expanded by remember { mutableStateOf(false) }
+
     SettingsGroup(isTablet = isTablet) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -255,104 +296,83 @@ private fun HeroStyleOptions(
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                HeroStyleOption(
-                    modifier = Modifier.weight(1f),
-                    style = HomeHeroStyle.FULL_BLEED,
-                    selectedStyle = selectedStyle,
-                    title = stringResource(Res.string.settings_homescreen_hero_style_full_bleed),
-                    description = stringResource(
-                        Res.string.settings_homescreen_hero_style_full_bleed_description,
-                    ),
-                )
-                HeroStyleOption(
-                    modifier = Modifier.weight(1f),
-                    style = HomeHeroStyle.CARD,
-                    selectedStyle = selectedStyle,
-                    title = stringResource(Res.string.settings_homescreen_hero_style_card),
-                    description = stringResource(
-                        Res.string.settings_homescreen_hero_style_card_description,
-                    ),
-                )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = selectedChoice.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = selectedChoice.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(
+                            imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    choices.forEach { choice ->
+                        val isSelected = choice.style == selectedStyle
+                        DropdownMenuItem(
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = choice.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                    )
+                                    Text(
+                                        text = choice.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                expanded = false
+                                HomeCatalogSettingsRepository.setHeroStyle(choice.style)
+                            },
+                        )
+                    }
+                }
             }
-            HeroStyleOption(
-                modifier = Modifier.fillMaxWidth(),
-                style = HomeHeroStyle.NETFLIX,
-                selectedStyle = selectedStyle,
-                title = stringResource(Res.string.settings_homescreen_hero_style_netflix),
-                description = stringResource(
-                    Res.string.settings_homescreen_hero_style_netflix_description,
-                ),
-            )
-            HeroStyleOption(
-                modifier = Modifier.fillMaxWidth(),
-                style = HomeHeroStyle.COVERFLOW,
-                selectedStyle = selectedStyle,
-                title = "Coverflow Poster Stack",
-                description = "Centered poster with neighboring posters peeking over a tinted backdrop.",
-            )
-            HeroStyleOption(
-                modifier = Modifier.fillMaxWidth(),
-                style = HomeHeroStyle.STACKED_DECK,
-                selectedStyle = selectedStyle,
-                title = "Stacked Deck",
-                description = "Centered card with the next cards stacked behind it. Posters in portrait, backdrops with the title in landscape.",
-            )
-            HeroStyleOption(
-                modifier = Modifier.fillMaxWidth(),
-                style = HomeHeroStyle.CONTINUE_WATCHING,
-                selectedStyle = selectedStyle,
-                title = "Continue Watching",
-                description = "Resume what you were watching, with a progress bar. Shows the Netflix-style trending hero when there is nothing to resume.",
-            )
-        }
-    }
-}
-
-@Composable
-private fun HeroStyleOption(
-    modifier: Modifier,
-    style: HomeHeroStyle,
-    selectedStyle: HomeHeroStyle,
-    title: String,
-    description: String,
-) {
-    val selected = selectedStyle == style
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    }
-
-    Surface(
-        modifier = modifier
-            .heightIn(min = if (selected) 92.dp else 88.dp)
-            .clickable { HomeCatalogSettingsRepository.setHeroStyle(style) },
-        shape = RoundedCornerShape(14.dp),
-        color = containerColor,
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

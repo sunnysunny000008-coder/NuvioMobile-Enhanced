@@ -538,7 +538,8 @@ internal fun HomeHeroSection(
             }
             val artworkParallax = if (isCardStyle) 0f else HERO_BACKGROUND_PARALLAX
             val artworkBaseScale = if (isCardStyle) 1f else HERO_BACKGROUND_SCALE
-            val heroWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+            val heroWidthDp: Dp = maxWidth
+            val heroWidthPx = with(LocalDensity.current) { heroWidthDp.toPx() }
             val heroHeightPx = with(LocalDensity.current) { layout.heroHeight.toPx() }
             val scrollOffsetPx by remember(listState, heroHeightPx) {
                 derivedStateOf {
@@ -699,7 +700,7 @@ internal fun HomeHeroSection(
                                 layers = visiblePages,
                                 items = items,
                                 pagerState = pagerState,
-                                heroWidth = maxWidth,
+                                heroWidth = heroWidthDp,
                                 topPadding = statusBarTopPadding + COVERFLOW_TOP_GAP,
                             )
                         } else {

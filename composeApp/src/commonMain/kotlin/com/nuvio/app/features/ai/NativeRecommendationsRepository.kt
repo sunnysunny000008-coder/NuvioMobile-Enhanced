@@ -23,7 +23,6 @@ enum class NativeRecommendationRow(
     val mediaType: TmdbEntityMediaType,
     val filters: Map<String, String>,
 ) {
-    val catalogKey: String get() = "native_rec_$key"
     Decade1970("decade_1970", "From the 1970s", "Popular movies released in the 1970s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "1970-01-01", "primary_release_date.lte" to "1979-12-31")),
     Decade1980("decade_1980", "From the 1980s", "Popular movies released in the 1980s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "1980-01-01", "primary_release_date.lte" to "1989-12-31")),
     Decade1990("decade_1990", "From the 1990s", "Popular movies released in the 1990s", TmdbEntityMediaType.MOVIE, mapOf("primary_release_date.gte" to "1990-01-01", "primary_release_date.lte" to "1999-12-31")),
@@ -36,6 +35,8 @@ enum class NativeRecommendationRow(
     CrimeThriller("genre_crime_thriller", "Crime & thrillers", "Tense crime stories and thrillers", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "80,53", "vote_count.gte" to "50")),
     FantasyAdventure("genre_fantasy_adventure", "Fantasy adventures", "Fantasy worlds and epic adventures", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "14,12", "vote_count.gte" to "50")),
     ComedyRomance("genre_comedy_romance", "Romantic comedies", "Lighthearted romance picks", TmdbEntityMediaType.MOVIE, mapOf("with_genres" to "35,10749", "vote_count.gte" to "50"));
+
+    val catalogKey: String get() = "native_rec_$key"
 
     companion object {
         fun fromKey(key: String): NativeRecommendationRow? = values().firstOrNull { it.key == key }

@@ -948,6 +948,7 @@ private fun MobileSettingsScreen(
                     onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
                     onNativeRecommendationsClick = { onPageChange(SettingsPage.NativeRecommendations) },
+                    onGeminiRecommendationsClick = { onPageChange(SettingsPage.GeminiRecommendations) },
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -967,6 +968,7 @@ private fun MobileSettingsScreen(
                     settings = tmdbSettings,
                 )
                 SettingsPage.NativeRecommendations -> nativeRecommendationsSettingsContent(isTablet = false)
+                SettingsPage.GeminiRecommendations -> geminiRecommendationsSettingsContent(isTablet = false)
                 SettingsPage.MdbListRatings -> mdbListSettingsContent(
                     isTablet = false,
                     settings = mdbListSettings,
@@ -1447,6 +1449,7 @@ private fun TabletSettingsScreen(
                         onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
                         onNativeRecommendationsClick = { onPageChange(SettingsPage.NativeRecommendations) },
+                        onGeminiRecommendationsClick = { onPageChange(SettingsPage.GeminiRecommendations) },
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1466,6 +1469,7 @@ private fun TabletSettingsScreen(
                         settings = tmdbSettings,
                     )
                     SettingsPage.NativeRecommendations -> nativeRecommendationsSettingsContent(isTablet = true)
+                    SettingsPage.GeminiRecommendations -> geminiRecommendationsSettingsContent(isTablet = true)
                     SettingsPage.MdbListRatings -> mdbListSettingsContent(
                         isTablet = true,
                         settings = mdbListSettings,

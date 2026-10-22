@@ -1,6 +1,7 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.LiveTv
@@ -32,6 +33,7 @@ internal fun LazyListScope.integrationsContent(
     onLiveTvClick: () -> Unit,
     onDiscordClick: () -> Unit,
     onNativeRecommendationsClick: () -> Unit,
+    onGeminiRecommendationsClick: () -> Unit,
 ) {
     item {
         SettingsSection(
@@ -79,7 +81,13 @@ internal fun LazyListScope.integrationsContent(
                     onClick = onLiveTvClick,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                GeminiRecommendationsCollapsibleRow(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Gemini Recommendations",
+                    description = "AI themed rows built from your watch history.",
+                    icon = Icons.Rounded.AutoAwesome,
+                    isTablet = isTablet,
+                    onClick = onGeminiRecommendationsClick,
+                )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
                     title = "Native TMDB Recommendations",

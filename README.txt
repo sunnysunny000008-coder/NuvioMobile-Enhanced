@@ -1,15 +1,21 @@
-Nuvio Native TMDB Empty Rows Fix + Native Taste Builder
+NuvioMobile-Enhanced — Hero carousel rendering correction
 
-Overlay these files onto the existing NuvioMobile-Enhanced repository.
+This is a corrected v2 patch. It also adds the missing fillMaxHeight import that caused the prior GitHub Actions compilation error.
 
-Fix:
-- Restores the native catalog key contract: Home chooser keys are `native_rec_<row key>`.
-- Fixes native catalog registration and settings lookup to use the same stable key.
-- Migrates any short-lived bare row keys while preserving saved enabled state, order, custom titles and row shape.
+This is a corrective patch for the previously supplied hero-styles patch. Apply it
+on top of the checkout where the Coverflow Poster Stack and Peek Carousel options
+are already present. It changes only HomeHeroSection.kt and leaves the settings,
+extended-info preference, and Home catalog/category chooser untouched.
 
-Taste Builder:
-- Adds a local-only Build My Taste Profile section under Native TMDB Recommendations.
-- Lets users select favorite genres and applies those preferences to native TMDB recommendation ranking.
-- Does not modify HomeScreen, Gemini recommendations, the existing Home chooser UI, or other settings.
+Rendering changes:
+- Coverflow: centered narrow poster, adjacent poster previews, tinted backdrop.
+- Peek: wide rounded card with the next/previous card peeking from the edges.
+- Reserved-space layout now recognizes both styles so the Home list does not overlap.
 
-Extract this ZIP into the repository root, overwriting the listed source files. Review the changes before committing. Static checks passed, but a Gradle build could not be completed in this environment because Gradle 9.4.1 could not be downloaded (network DNS unavailable).
+Apply from the repository root by extracting this ZIP with overwrite enabled.
+Then inspect with:
+  git diff --check
+  git diff -- composeApp/src/commonMain/kotlin/com/nuvio/app/features/home/components/HomeHeroSection.kt
+
+The Android build has not been run in this environment. Use the existing GitHub
+Actions workflow to build and verify the APK before treating the patch as validated.

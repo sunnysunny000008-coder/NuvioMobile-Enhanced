@@ -27,7 +27,7 @@ import kotlin.random.Random
 import kotlin.time.Clock
 
 /** How a native row picks its titles. */
-enum class NativeRowKind { ForYou, BecauseWatched, HiddenGems, Fresh, Decades, QuickWatches, FinishedSeries, Genre }
+enum class NativeRowKind { ForYou, BecauseWatched, HiddenGems, Fresh, Decades, QuickWatches, FinishedSeries, Genre, Theme }
 
 /** Recommendation shelves produced by TMDB Discover; no AI/API key for Gemini is needed. */
 enum class NativeRecommendationRow(
@@ -39,6 +39,8 @@ enum class NativeRecommendationRow(
     internal val mediaOnly: TmdbEntityMediaType? = null,
     internal val movieGenres: List<Int> = emptyList(),
     internal val tvGenres: List<Int> = emptyList(),
+    /** TMDB keyword ids for theme rows; a title matching any of them can appear (movies and series). */
+    internal val keywordIds: List<Int> = emptyList(),
 ) {
     ForYou("for_you", "Picked for you", "Built from the genres you like and what you actually watch", NativeRowKind.ForYou),
     BecauseWatched("because_watched", "Because of your watch history", "Titles that share themes with what you finished", NativeRowKind.BecauseWatched),
@@ -50,7 +52,11 @@ enum class NativeRecommendationRow(
     ScifiMystery("genre_scifi_mystery", "Sci-fi mysteries", "Science fiction meets mystery", NativeRowKind.Genre, movieGenres = listOf(878, 9648), tvGenres = listOf(10765, 9648)),
     CrimeThriller("genre_crime_thriller", "Crime & thrillers", "Tense crime stories and thrillers", NativeRowKind.Genre, movieGenres = listOf(80, 53), tvGenres = listOf(80, 9648)),
     FantasyAdventure("genre_fantasy_adventure", "Fantasy adventures", "Fantasy worlds and epic adventures", NativeRowKind.Genre, movieGenres = listOf(14, 12), tvGenres = listOf(10765, 10759)),
-    ComedyRomance("genre_comedy_romance", "Romantic comedies", "Lighthearted romance picks", NativeRowKind.Genre, movieGenres = listOf(35, 10749), tvGenres = listOf(35, 18));
+    ComedyRomance("genre_comedy_romance", "Romantic comedies", "Lighthearted romance picks", NativeRowKind.Genre, movieGenres = listOf(35, 10749), tvGenres = listOf(35, 18)),
+    ThemeTimeTravel("theme_time_travel", "Time travel", "Stories that bend the timeline", NativeRowKind.Theme, keywordIds = listOf(4379)),
+    ThemeSpace("theme_space", "Space", "Journeys and mysteries among the stars", NativeRowKind.Theme, keywordIds = listOf(9882)),
+    ThemeSuperhero("theme_superhero", "Superheroes", "Capes, powers and origin stories", NativeRowKind.Theme, keywordIds = listOf(9715)),
+    ThemeBasedOnNovel("theme_based_on_novel", "Based on a novel", "Adaptations of books and novels", NativeRowKind.Theme, keywordIds = listOf(818));
 
     val catalogKey: String get() = "native_rec_$key"
 
@@ -653,6 +659,8 @@ object NativeRecommendationsRepository {
                 fetchAll(media, ctx, null, false, mapOf("with_runtime.gte" to "60", "with_runtime.lte" to "100"))
             NativeRowKind.FinishedSeries ->
                 fetchAll(media, ctx, null, false, mapOf("with_status" to "3"))
+            NativeRowKind.Theme ->
+                fetchAll(media, ctx, null, false, mapOf("with_keywords" to row.keywordIds.joinToString("|")))
             NativeRowKind.Genre -> {
                 val ids = if (media == TmdbEntityMediaType.MOVIE) row.movieGenres else row.tvGenres
                 // A genre the viewer dislikes makes the whole shelf pointless.

@@ -189,6 +189,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Integrations,
     ),
+    GeminiRecommendations(
+        titleRes = Res.string.compose_settings_page_gemini_recommendations,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
+    ),
     Omdb(
         titleRes = Res.string.compose_settings_page_omdb,
         category = SettingsCategory.General,

@@ -384,6 +384,7 @@ internal fun HomeHeroSection(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    showExtendedInfo: Boolean = true,
     listState: LazyListState? = null,
     stretchPx: () -> Float = { 0f },
     trailerPlaybackEnabled: Boolean = false,
@@ -437,14 +438,16 @@ internal fun HomeHeroSection(
         pagerState.animateScrollToPage(nextPage)
     }
 
-    val isCardStyle = heroStyle == HomeHeroStyle.CARD
+    val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.PEEK
+    val isCoverflowStyle = heroStyle == HomeHeroStyle.COVERFLOW
+    val isPeekStyle = heroStyle == HomeHeroStyle.PEEK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val cardInsetModifier = if (isCardStyle) {
         Modifier.padding(
             top = statusBarTopPadding + HERO_CARD_TOP_PADDING,
-            start = HERO_CARD_HORIZONTAL_PADDING,
-            end = HERO_CARD_HORIZONTAL_PADDING,
+            start = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
+            end = if (isPeekStyle) 36.dp else HERO_CARD_HORIZONTAL_PADDING,
         )
     } else {
         Modifier
@@ -503,6 +506,7 @@ internal fun HomeHeroSection(
                 // Always the backdrop: posters have the title printed on them, which doubles up with our logo.
                 netflixLayout != null -> HomeHeroArtworkSource.BACKDROP
                 !isCardStyle -> HomeHeroArtworkSource.BACKDROP
+                isCoverflowStyle -> HomeHeroArtworkSource.POSTER
                 heroUsesWideArtwork(maxWidth, viewportHeight, baseLayout.isTablet) ->
                     HomeHeroArtworkSource.BACKDROP
                 else -> HomeHeroArtworkSource.POSTER
@@ -827,6 +831,7 @@ internal fun HomeHeroSection(
                                                 item = layerItem,
                                                 layout = layout,
                                                 onItemClick = onItemClick,
+                                                showExtendedInfo = showExtendedInfo,
                                                 startAligned = true,
                                                 contentColor = Color.White,
                                                 logoWidth = netflixLayout.logoWidth,
@@ -942,6 +947,7 @@ internal fun HomeHeroSection(
                                             item = layerItem,
                                             layout = layout,
                                             onItemClick = onItemClick,
+                                            showExtendedInfo = showExtendedInfo,
                                         )
                                     }
                                     }
@@ -1128,6 +1134,7 @@ internal fun HomeHeroReservedSpace(
 private fun HeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
+    showExtendedInfo: Boolean = true,
     onItemClick: ((MetaPreview) -> Unit)?,
     startAligned: Boolean = layout.isTablet,
     contentColor: Color = MaterialTheme.colorScheme.onBackground,
@@ -1212,6 +1219,7 @@ private fun HeroContentBlock(
         }
         val textAlign = if (startAligned) TextAlign.Start else TextAlign.Center
 
+        if (showExtendedInfo) {
         Spacer(modifier = Modifier.height(14.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1263,6 +1271,8 @@ private fun HeroContentBlock(
                 maxLines = synopsisMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
         }
 
         if (actions != null) {

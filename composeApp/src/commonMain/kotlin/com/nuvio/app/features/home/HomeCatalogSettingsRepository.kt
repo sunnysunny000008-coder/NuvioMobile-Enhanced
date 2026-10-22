@@ -40,6 +40,7 @@ data class HomeCatalogSettingsItem(
 internal data class HomeCatalogSettingsUiState(
     val heroEnabled: Boolean = true,
     val heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    val showHeroExtendedInfo: Boolean = true,
     val heroTrailerPlaybackEnabled: Boolean = false,
     val heroTrailerStartDelaySeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_TRAILER_START_DELAY_SECONDS,
     val heroTrailerStartUnmuted: Boolean = false,
@@ -52,6 +53,8 @@ internal data class HomeCatalogSettingsUiState(
             append(heroEnabled)
             append('|')
             append(heroStyle.storageValue)
+            append('|')
+            append(showHeroExtendedInfo)
             append('|')
             append(heroTrailerPlaybackEnabled)
             append('|')
@@ -100,6 +103,8 @@ internal enum class HomeHeroStyle(
     FULL_BLEED("full_bleed"),
     CARD("card"),
     NETFLIX("netflix"),
+    COVERFLOW("coverflow"),
+    PEEK("peek"),
     ;
 
     companion object {
@@ -180,6 +185,7 @@ private data class StoredHomeCatalogPreference(
 private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
     val heroStyle: String = HomeHeroStyle.FULL_BLEED.storageValue,
+    val showHeroExtendedInfo: Boolean = true,
     val heroTrailerPlaybackEnabled: Boolean = false,
     val heroTrailerStartDelaySeconds: Int = HomeCatalogSettingsRepository.DEFAULT_HERO_TRAILER_START_DELAY_SECONDS,
     val heroTrailerStartUnmuted: Boolean = false,
@@ -217,6 +223,7 @@ object HomeCatalogSettingsRepository {
         }
     private var heroEnabled = true
     private var heroStyle = HomeHeroStyle.FULL_BLEED
+    private var showHeroExtendedInfo = true
     private var heroTrailerPlaybackEnabled = false
     private var heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
     private var heroTrailerStartUnmuted = false
@@ -228,6 +235,7 @@ object HomeCatalogSettingsRepository {
         preferences = emptyMap()
         heroEnabled = true
         heroStyle = HomeHeroStyle.FULL_BLEED
+        showHeroExtendedInfo = true
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
@@ -249,6 +257,7 @@ object HomeCatalogSettingsRepository {
         preferences = emptyMap()
         heroEnabled = true
         heroStyle = HomeHeroStyle.FULL_BLEED
+        showHeroExtendedInfo = true
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
@@ -330,6 +339,16 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         if (heroStyle == style) return
         heroStyle = style
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+        HomeCatalogSettingsSyncService.triggerPush()
+    }
+
+    fun setHeroExtendedInfoEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (showHeroExtendedInfo == enabled) return
+        showHeroExtendedInfo = enabled
         publish()
         persist()
         HomeRepository.applyCurrentSettings()
@@ -423,6 +442,7 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         heroEnabled = true
         heroStyle = HomeHeroStyle.FULL_BLEED
+        showHeroExtendedInfo = true
         heroTrailerPlaybackEnabled = false
         heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
         heroTrailerStartUnmuted = false
@@ -478,6 +498,7 @@ object HomeCatalogSettingsRepository {
         if (parsedPayload != null) {
             heroEnabled = parsedPayload.heroEnabled
             heroStyle = HomeHeroStyle.fromStorageValue(parsedPayload.heroStyle)
+            showHeroExtendedInfo = parsedPayload.showHeroExtendedInfo
             heroTrailerPlaybackEnabled = parsedPayload.heroTrailerPlaybackEnabled
             heroTrailerStartDelaySeconds = parsedPayload.heroTrailerStartDelaySeconds.coerceIn(
                 MIN_HERO_TRAILER_START_DELAY_SECONDS,
@@ -610,6 +631,7 @@ object HomeCatalogSettingsRepository {
         _uiState.value = HomeCatalogSettingsUiState(
             heroEnabled = heroEnabled,
             heroStyle = heroStyle,
+            showHeroExtendedInfo = showHeroExtendedInfo,
             heroTrailerPlaybackEnabled = heroTrailerPlaybackEnabled,
             heroTrailerStartDelaySeconds = heroTrailerStartDelaySeconds,
             heroTrailerStartUnmuted = heroTrailerStartUnmuted,
@@ -625,6 +647,7 @@ object HomeCatalogSettingsRepository {
                 StoredHomeCatalogSettingsPayload(
                     heroEnabled = heroEnabled,
                     heroStyle = heroStyle.storageValue,
+                    showHeroExtendedInfo = showHeroExtendedInfo,
                     heroTrailerPlaybackEnabled = heroTrailerPlaybackEnabled,
                     heroTrailerStartDelaySeconds = heroTrailerStartDelaySeconds,
                     heroTrailerStartUnmuted = heroTrailerStartUnmuted,

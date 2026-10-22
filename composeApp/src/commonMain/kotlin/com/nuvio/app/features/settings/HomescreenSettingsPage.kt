@@ -201,6 +201,18 @@ internal fun LazyListScope.homescreenSettingsContent(
                         isTablet = isTablet,
                         selectedStyle = settingsUiState.heroStyle,
                     )
+                    SettingsGroup(isTablet = isTablet) {
+                        androidx.compose.material3.ListItem(
+                            headlineContent = { Text("Extended hero info") },
+                            supportingContent = { Text("Show rating, year, genre, age rating and synopsis on the featured title.") },
+                            trailingContent = {
+                                androidx.compose.material3.Switch(
+                                    checked = settingsUiState.showHeroExtendedInfo,
+                                    onCheckedChange = HomeCatalogSettingsRepository::setHeroExtendedInfoEnabled,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -274,6 +286,20 @@ private fun HeroStyleOptions(
                 description = stringResource(
                     Res.string.settings_homescreen_hero_style_netflix_description,
                 ),
+            )
+            HeroStyleOption(
+                modifier = Modifier.fillMaxWidth(),
+                style = HomeHeroStyle.COVERFLOW,
+                selectedStyle = selectedStyle,
+                title = "Coverflow Poster Stack",
+                description = "Centered poster with neighboring posters peeking over a tinted backdrop.",
+            )
+            HeroStyleOption(
+                modifier = Modifier.fillMaxWidth(),
+                style = HomeHeroStyle.PEEK,
+                selectedStyle = selectedStyle,
+                title = "Peek Carousel",
+                description = "Rounded, near-full-width cards with the next card peeking in.",
             )
         }
     }

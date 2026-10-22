@@ -73,7 +73,7 @@ internal fun HomeSkeletonHero(
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
 ) {
     val brush = rememberHomeSkeletonBrush()
-    val isCardStyle = heroStyle == HomeHeroStyle.CARD
+    val isCardStyle = heroStyle == HomeHeroStyle.CARD || heroStyle == HomeHeroStyle.COVERFLOW || heroStyle == HomeHeroStyle.PEEK
     val isNetflixStyle = heroStyle == HomeHeroStyle.NETFLIX
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 

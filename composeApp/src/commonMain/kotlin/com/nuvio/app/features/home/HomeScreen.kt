@@ -1138,6 +1138,7 @@ fun HomeScreen(
                                 viewportHeight = maxHeight,
                                 mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                                 heroStyle = homeSettingsUiState.heroStyle,
+                                showExtendedInfo = homeSettingsUiState.showHeroExtendedInfo,
                                 listState = homeListState,
                                 stretchPx = { heroStretchState.stretchPx },
                                 // animateCollectionGifs doubles as "Home is the visible route" — it already
